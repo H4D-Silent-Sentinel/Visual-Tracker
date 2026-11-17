@@ -146,60 +146,79 @@
 
 <!-- ================= COLLECT ================= -->
 <section id="tab-collect" hidden>
-  <div class="cols">
-    <div>
-      <h2>Live camera</h2>
-      <p class="cap">Record our own footage. Clips are saved to <span class="mono">footage/ours/</span> with the details below, then appear in Clip Review and in the labeler.</p>
-      <div class="cam" id="camBox">Camera is off.</div>
-      <div class="ctl">
-        <label>Camera <select id="camIdx"><option value="0">0 (built-in)</option><option value="1">1</option><option value="2">2</option></select></label>
-        <button class="btn" id="camToggle">Start preview</button>
-        <button class="btn" id="camOverlay" aria-pressed="false">Model boxes: off</button>
-        <button class="btn rec" id="camRec">● Record</button>
-      </div>
+  <h2><span class="stepn">1</span>Record</h2>
+  <p class="cap">Fill in the details, then record. Clips are saved to <span class="mono">footage/ours/</span> and appear in Clip Review and step 2.</p>
+  <div class="recgrid">
+    <div class="cam" id="camBox"></div>
+    <div class="recside">
+      <label>Camera<select id="camIdx"></select></label>
       <div class="form">
         <label>Location<input type="text" id="mLoc" placeholder="e.g. Mudd rooftop"></label>
         <label>Drone type<input type="text" id="mDrone" placeholder="e.g. DJI Mini 4"></label>
         <label>Background<select id="mBg"><option value="">not set</option><option>open sky</option><option>trees</option><option>buildings</option><option>mixed</option><option>other</option></select></label>
-        <label>Notes<input type="text" id="mNotes"></label>
+        <label>Notes<input type="text" id="mNotes" placeholder="e.g. 30 m, overcast"></label>
       </div>
-      <div id="camStatus" class="mono muted" style="margin-top:8px" aria-live="polite"></div>
-
-      <h2>Our recordings</h2>
-      <p class="cap">Clips recorded here. Delete removes the video, its browser copy, its labels and its flags. It cannot be undone.</p>
-      <div id="oursList"></div>
-
-      <h2>Hard examples</h2>
-      <p class="cap">Frames flagged in Clip Review with <kbd>M</kbd> or <kbd>F</kbd>. Export copies them to <span class="mono">our_data/hard_examples/</span>; nothing is added to a training set automatically.</p>
-      <div class="ctl"><button class="btn" id="flagExport">Export for retraining</button><span id="flagMsg" class="mono muted"></span></div>
-      <div id="flagList"></div>
-
-      <h2>Coverage</h2>
-      <p class="cap">What footage we have. Background is only filled in for our own recordings; it is not guessed for public clips.</p>
-      <div class="tw"><table id="covTable"></table></div>
-    </div>
-    <div>
-      <h2>Label a clip</h2>
-      <p class="cap">The model proposes a box; accept it, redraw it by dragging on the picture, or mark the frame as no drone. Labels are saved in YOLO format under <span class="mono">our_data/labels/</span>, separate from the existing training folders.</p>
       <div class="ctl">
-        <label>Clip <select id="labClip"></select></label>
-        <label>Step <select id="labStride"><option value="1">1 frame</option><option value="5" selected>5 frames</option><option value="15">15 frames</option><option value="30">30 frames</option></select></label>
-        <span class="read" id="labRead"></span>
+        <button class="btn rec bigbtn" id="camRec">● Record</button>
+        <button class="btn" id="camToggle">Start camera</button>
+        <button class="btn" id="camOverlay" aria-pressed="false">Model boxes: off</button>
       </div>
-      <div class="lab" id="labBox"><video id="labVid" playsinline muted preload="auto"></video><canvas id="labCv"></canvas></div>
-      <div class="ctl">
-        <button class="btn" id="labPrev" title="A">◀ Back</button>
-        <button class="btn" id="labNext" title="D">Next ▶</button>
-        <button class="btn" id="labPropose" title="P">Propose box</button>
-        <button class="btn on" id="labSave" title="S or Enter">Save label</button>
-        <button class="btn" id="labNone" title="N">No drone</button>
-        <button class="btn" id="labClear" title="X">Clear boxes</button>
-        <button class="btn" id="labDelete">Delete saved label</button>
-      </div>
-      <div id="labStatus" class="mono" style="margin-top:8px;min-height:20px" aria-live="polite"></div>
-      <div class="keys"><kbd>A</kbd> <kbd>D</kbd> back/next · <kbd>P</kbd> propose · <kbd>S</kbd> or <kbd>Enter</kbd> save · <kbd>N</kbd> no drone · <kbd>X</kbd> clear · drag on the picture to draw a box</div>
+      <div id="camStatus" class="mono" role="status" aria-live="polite"></div>
     </div>
   </div>
+
+  <h2><span class="stepn">2</span>Label</h2>
+  <p class="cap">Draw a box around the drone, or mark the frame as no drone. With suggestions on, the model draws its guess first; fix it or accept it. Labels are saved in <span class="mono">our_data/labels/</span>, apart from the existing training data.</p>
+  <div class="ctl">
+    <label>Clip <select id="labClip"></select></label>
+    <label>Every <select id="labStride"><option value="1">frame</option><option value="5" selected>5th frame</option><option value="15">15th frame</option><option value="30">30th frame</option></select></label>
+    <label class="chk"><input type="checkbox" id="labAuto" checked> Suggest boxes</label>
+    <span class="read" id="labRead"></span>
+  </div>
+  <div class="labgrid">
+    <div>
+      <div class="lab" id="labBox"><video id="labVid" playsinline muted preload="auto"></video><canvas id="labCv"></canvas></div>
+      <canvas id="labStrip" height="18" aria-label="Labeled frames in this clip. Click to jump."></canvas>
+      <div class="legend"><span><i style="background:var(--ok)"></i>drone labeled</span><span><i style="background:var(--muted)"></i>no drone</span><span><i style="background:#fff;width:3px"></i>this frame</span></div>
+    </div>
+    <div class="labside">
+      <div id="labStatus" class="labstatus" role="status" aria-live="polite">Pick a clip.</div>
+      <button class="btn on" id="labSave" title="S or Enter">✓ Save box &amp; next <kbd>S</kbd></button>
+      <button class="btn" id="labNone" title="N">○ No drone &amp; next <kbd>N</kbd></button>
+      <div class="two">
+        <button class="btn" id="labPrev" title="A">◀ Back <kbd>A</kbd></button>
+        <button class="btn" id="labNext" title="D">Skip ▶ <kbd>D</kbd></button>
+      </div>
+      <div class="two">
+        <button class="btn" id="labPropose" title="P">Suggest <kbd>P</kbd></button>
+        <button class="btn" id="labClear" title="X">Clear <kbd>X</kbd></button>
+      </div>
+      <button class="btn" id="labDelete">Delete this frame's label</button>
+      <p class="hint">Drag on the picture to draw or redraw the box.</p>
+    </div>
+  </div>
+
+  <h2><span class="stepn">3</span>Use it</h2>
+  <div class="cols">
+    <div>
+      <h3 class="sub3">Our recordings</h3>
+      <div id="oursList"></div>
+      <h3 class="sub3">Training set</h3>
+      <div id="dsSummary" class="mono"></div>
+      <div class="ctl"><button class="btn" id="dsWrite">Prepare training set</button></div>
+      <div id="dsMsg" class="mono" role="status" aria-live="polite"></div>
+    </div>
+    <div>
+      <h3 class="sub3">Hard examples</h3>
+      <p class="cap">Frames flagged in Clip Review with <kbd>M</kbd> or <kbd>F</kbd>. Export copies the ones whose truth is known into <span class="mono">our_data/hard_examples/</span>.</p>
+      <div class="ctl"><button class="btn" id="flagExport">Export hard examples</button></div>
+      <div id="flagMsg" class="mono" role="status" aria-live="polite"></div>
+      <div id="flagList"></div>
+    </div>
+  </div>
+  <h3 class="sub3">Coverage</h3>
+  <p class="cap">What footage we have. Background is filled in only for our own recordings.</p>
+  <div class="tw"><table id="covTable"></table></div>
 </section>
 </div>
 

@@ -159,15 +159,34 @@ dialog img{max-width:100%;max-height:78vh;display:block}
 dialog .dc{display:flex;justify-content:space-between;gap:16px;align-items:center;margin-top:8px;font-family:var(--mono);font-size:12px;color:var(--muted)}
 
 /* ---- collect ---- */
-.cols{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.3fr);gap:24px;align-items:start}
-@media (max-width:1000px){.cols{grid-template-columns:minmax(0,1fr)}}
-.cam{background:#000;border:1px solid var(--line);aspect-ratio:16/9;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:13px;text-align:center;padding:0;overflow:hidden}
+.stepn{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:var(--accentbg);color:var(--accent);font:600 12px var(--mono);margin-right:8px;vertical-align:2px}
+h3.sub3{font-size:14px;font-weight:600;margin:18px 0 6px}
+.cols{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:24px;align-items:start}
+.recgrid{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(260px,1fr);gap:16px;align-items:start}
+.labgrid{display:grid;grid-template-columns:minmax(0,1fr) 260px;gap:16px;align-items:start;margin-top:8px}
+@media (max-width:1000px){.cols,.recgrid,.labgrid{grid-template-columns:minmax(0,1fr)}}
+.cam{position:relative;background:#000;border:1px solid var(--line);aspect-ratio:16/9;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:13px;text-align:center;overflow:hidden}
 .cam img{width:100%;height:100%;object-fit:contain;display:block}
-.form{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
+.cam .recbadge{position:absolute;left:10px;top:10px;font:600 14px var(--mono);color:var(--miss);background:rgba(20,22,24,.85);border:1px solid var(--miss);padding:4px 10px;border-radius:3px}
+.cam .recbadge::before{content:"";display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--miss);margin-right:7px;animation:hudpulse 1s infinite}
+.recside{display:flex;flex-direction:column;gap:10px}
+.recside>label{display:flex;flex-direction:column;gap:3px;font-size:12.5px;color:var(--muted)}
+.form{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .form label{display:flex;flex-direction:column;gap:3px;font-size:12.5px;color:var(--muted)}
+.bigbtn{font-size:15px;padding:9px 16px;font-weight:600}
+.btn.rec.recording{background:var(--miss);color:#fff}
+#camStatus{font-size:12.5px;min-height:18px}
 .lab{position:relative;background:#000;border:1px solid var(--line);touch-action:none}
 .lab video{display:block;width:100%}
 .lab canvas{position:absolute;inset:0;width:100%;height:100%;cursor:crosshair}
+#labStrip{display:block;width:100%;height:18px;margin-top:6px;border:1px solid var(--line);background:var(--panel);cursor:pointer}
+.labside{display:flex;flex-direction:column;gap:8px}
+.labside .btn{text-align:left;display:flex;justify-content:space-between;align-items:center;gap:8px}
+.labside .two{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.labstatus{font:13px var(--mono);border-left:2px solid var(--line2);padding:4px 10px;min-height:44px}
+.labstatus.saved{border-color:var(--ok);color:var(--ok)} .labstatus.pending{border-color:var(--fa);color:var(--fa)} .labstatus.err{border-color:var(--miss);color:var(--miss)}
+.hint{font-size:12.5px;color:var(--muted);margin:0}
+label.chk{flex-direction:row;align-items:center;gap:6px}
 .flagrow{display:grid;grid-template-columns:96px 1fr auto;gap:10px;align-items:center;border-bottom:1px solid var(--line);padding:6px 0}
 .flagrow img{width:96px;aspect-ratio:16/9;object-fit:cover;display:block;background:#000}
 /* ---- Live tab: the original tactical HUD look (navy, IBM Plex, teal lock, corner marks) ---- */

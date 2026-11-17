@@ -357,6 +357,10 @@ class Engine(threading.Thread):
                 model.predictor = None  # fresh tracker
                 self.reset_counters()
             if idle and not restart:  # nobody watching: don't burn the GPU (e.g. while training)
+                if live and cap is not None and cap.isOpened():  # free the camera for the Collect tab
+                    cap.release()
+                    with self.lock:
+                        self.restart = True
                 with self.lock:
                     self.stats["status"] = "IDLE"
                 time.sleep(0.2)

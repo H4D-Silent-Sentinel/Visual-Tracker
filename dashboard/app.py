@@ -31,7 +31,7 @@ import cv2
 
 ROOT = Path(__file__).resolve().parent.parent
 HERE = Path(__file__).resolve().parent
-PORT = 8000
+PORT = int(__import__('os').environ.get('PORT', '8000'))
 DS = Path.home() / "yolo-datasets" / "dut-anti-uav"
 DATA = DS / "yolo"
 WEB = ROOT / "footage" / "web"
@@ -529,7 +529,6 @@ def flags_export():
         if img is None:
             continue
         name = f"{x['clip']}_{x['frame']:06d}"
-        cv2.imwrite(str(out_i / f"{name}.jpg"), img, [cv2.IMWRITE_JPEG_QUALITY, 92])
         g = idx[x["clip"]]["group"]
         label = None
         own = labels_get(x["clip"]).get(str(x["frame"]))
@@ -540,13 +539,15 @@ def flags_export():
             label = yolo_line(b) if b else ""
         elif g == "negatives":
             label = ""
-        if label is not None:
+        if label is not None:  # only frames whose truth we know; an unlabeled miss saved as "no drone" would teach the opposite
+            cv2.imwrite(str(out_i / f"{name}.jpg"), img, [cv2.IMWRITE_JPEG_QUALITY, 92])
             (out_l / f"{name}.txt").write_text(label + ("\n" if label else ""))
             labeled += 1
         rows.append({"image": f"{name}.jpg", "clip": x["clip"], "frame": x["frame"], "kind": x["kind"], "labeled": label is not None})
         n += 1
     (OURS / "hard_examples" / "manifest.json").write_text(json.dumps(rows, indent=1))
-    return {"ok": True, "exported": n, "with_labels": labeled, "need_labels": n - labeled, "folder": "our_data/hard_examples"}
+    return {"ok": True, "exported": labeled, "need_labels": n - labeled, "folder": "our_data/hard_examples",
+            "need": [r for r in rows if not r["labeled"]]}
 
 
 def labels_dir(key):
@@ -642,6 +643,54 @@ def live():
         live_engine.ENGINE.start()
         _live["m"] = live_engine
     return _live["m"]
+
+
+_camnames = {}
+
+
+def camera_list():
+    """Real cameras macOS reports, numbered the way OpenCV opens them (Desk View and screen capture skipped)."""
+    if "t" not in _camnames or time.time() - _camnames["t"] > 15:
+        try:
+            out = subprocess.run(["ffmpeg", "-hide_banner", "-f", "avfoundation", "-list_devices", "true", "-i", ""],
+                                 capture_output=True, text=True, timeout=10).stderr
+            vid = out.split("video devices:")[1].split("audio devices:")[0]
+            real = [n.strip() for _, n in re.findall(r"\[(\d+)\] (.+)", vid)
+                    if "Desk View" not in n and not n.startswith("Capture screen")]
+        except Exception:
+            real = ["Camera 0", "Camera 1"]
+        _camnames.update(t=time.time(), v=[{"index": i, "name": n, "builtin": "MacBook" in n or "FaceTime" in n} for i, n in enumerate(real)])
+    return _camnames["v"]
+
+
+def ours_dataset():
+    """What our own labeled data adds up to (frames we labeled + exported hard examples)."""
+    labs = list((OURS / "labels").glob("*/*.txt")) if (OURS / "labels").exists() else []
+    boxes = empty = 0
+    for p in labs:
+        n = sum(1 for l in p.read_text().splitlines() if l.strip())
+        boxes += n
+        empty += (n == 0)
+    hard = list((OURS / "hard_examples" / "labels").glob("*.txt")) if (OURS / "hard_examples" / "labels").exists() else []
+    return {"frames": len(labs), "with_drone": len(labs) - empty, "no_drone": empty, "boxes": boxes,
+            "clips": len({p.parent.name for p in labs}), "hard_examples": len(hard),
+            "yaml": (OURS / "dataset.yaml").exists()}
+
+
+def ours_dataset_write():
+    s = ours_dataset()
+    if not s["frames"] and not s["hard_examples"]:
+        return {"ok": False, "error": "Nothing labeled yet."}
+    train = ["images"] if s["frames"] else []
+    if s["hard_examples"]:
+        train.append("hard_examples/images")
+    val = DATA / "images" / "val"
+    (OURS / "dataset.yaml").write_text(
+        f"# Our own labeled frames (made by the dashboard's Collect tab)\npath: {OURS}\ntrain: [{', '.join(train)}]\n"
+        + (f"val: {val}\n" if val.exists() else "val: [images]\n") + "names:\n  0: drone\n")
+    cmd = (".venv/bin/yolo detect train model=runs/train/dut_v3_n960/weights/best.pt data=our_data/dataset.yaml "
+           "imgsz=960 epochs=10 batch=16 device=mps project=$PWD/runs/train name=ours_v4")
+    return {"ok": True, **ours_dataset(), "file": "our_data/dataset.yaml", "command": cmd}
 
 
 class Camera(threading.Thread):
@@ -773,6 +822,7 @@ def collect_payload():
     idx = clip_index()
     labeled = {k: len(list(labels_dir(k).glob("*.txt"))) for k in idx if labels_dir(k).exists()}
     return {"flags": flags_load(), "labeled": labeled, "coverage": coverage(), "camera": CAM.state(),
+            "cameras": camera_list(), "dataset": ours_dataset(),
             "ours": [k for k, c in idx.items() if c["group"] == "ours"],
             "recordings": [{"clip": k, "name": c["name"], "seconds": round(c["frames"] / c["fps"], 1), "labeled": labeled.get(k, 0),
                             "meta": read_json(ROOT / "footage" / "ours" / f"{c['name']}.json", {})}
@@ -962,6 +1012,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(flag_remove(d["remove"]) if d.get("remove") else flag_add(d))
             if u.path == "/api/flags/export":
                 return self.send_json(flags_export())
+            if u.path == "/api/ours/dataset":
+                return self.send_json(ours_dataset_write())
             if u.path == "/api/recording/delete":
                 return self.send_json(recording_delete(d.get("name")))
             if u.path == "/api/label":
