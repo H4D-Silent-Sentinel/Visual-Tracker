@@ -4,4 +4,13 @@ torch==2.15.0
 torchvision==0.29.2
 numpy==2.5.5
 opencv-python
-playwright==1.65.2   # only for dashboard/ui_test.py
+lap>=0.5.12          # ByteTrack assignment; avoids an automatic install during tracking
+playwright==1.65.2   # only for tests/browser/ checks
+
+# Local VLM: mlx-community/Qwen3.5-2B-4bit (Apache-2.0)
+# Pinned model revision: 674aaa7240b91e8012fcad5d791b7dfe5ba90207
+# vlm_server.py downloads the weights on first startup; pip installs the runtime below.
+mlx-vlm==0.8.0; sys_platform == "darwin" and platform_machine == "arm64"
+mlx==0.32.4; sys_platform == "darwin" and platform_machine == "arm64"
+transformers==5.23.0; sys_platform == "darwin" and platform_machine == "arm64"
+Pillow==13.0.0

@@ -64,7 +64,7 @@ async function boot() {
   const {tab, q} = parseHash();
   const first = (q.get('clip') && R.byKey[q.get('clip')]) ? q.get('clip') : ((R.demo.find(x => R.byKey[x.clip]) || {}).clip || (R.clips[0] || {}).key);
   if (first) await loadClip(first, {frame: q.has('f') ? +q.get('f') : null, out: q.get('out')});
-  else $('cTitle').textContent = 'No browser-playable clips yet. Run make_web_clips.py.';
+  else $('cTitle').textContent = 'No browser-playable clips yet. Run scripts/review/make_web_clips.py.';
   show(tab);
   chip(); setInterval(chip, 20000);
   addEventListener('resize', () => {drawBase(); renderFrame(R.frame)});

@@ -1,7 +1,9 @@
-"""Screenshot every tab at desktop and phone width into runs/ui_check/shots/."""
+"""Screenshot every tab at desktop and phone width into runs/ui_check/shots/.
+Run: .venv/bin/python tests/browser/shots.py
+"""
 from pathlib import Path
 from playwright.sync_api import sync_playwright
-O = Path(__file__).resolve().parent.parent / "runs/ui_check/shots"; O.mkdir(parents=True, exist_ok=True)
+O = Path(__file__).resolve().parents[2] / "runs/ui_check/shots"; O.mkdir(parents=True, exist_ok=True)
 with sync_playwright() as p:
     b = p.chromium.launch(channel="chrome", headless=True)
     for name, vp in [("d", {"width": 1440, "height": 900}), ("m", {"width": 390, "height": 844})]:

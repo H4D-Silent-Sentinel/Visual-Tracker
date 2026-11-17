@@ -10,14 +10,14 @@ Outputs:  v1, v2, v3 (default tracker, cutoff 0.35, same as Test 2) and v2_hold,
 (bytetrack_hold.yaml, detector cutoff 0.08). Tracking-test clips are run on the original frames,
 exactly like Test 2; other clips are run on the browser copy, so frame N always means the same picture.
 
-Run:  .venv/bin/python make_review.py --gt-only     (no model, safe any time)
-      .venv/bin/python make_review.py               (waits for training jobs to finish first)
+Run:  .venv/bin/python scripts/review/make_review.py --gt-only     (no model, safe any time)
+      .venv/bin/python scripts/review/make_review.py               (waits for training jobs to finish first)
 """
 import argparse, json, subprocess, time
 from pathlib import Path
 import cv2
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parents[2]
 DS = Path.home() / "yolo-datasets/dut-anti-uav"
 FR, GT = DS / "tracking/frames/Anti-UAV-Tracking-V0", DS / "tracking/gt/Anti-UAV-Tracking-V0GT"
 WEB, REVIEW = ROOT / "footage/web", ROOT / "runs/review"

@@ -1,6 +1,6 @@
 #!/bin/zsh
 # Double-click to start the drone tracker dashboard. Keep this window open while you use it.
-cd ~/"Documents/School/Fall 2026/Hacking 4 Defense/yolo-tracker" || { echo "Project folder not found."; read; exit 1; }
+cd "$(dirname "$0")" || { echo "Project folder not found."; read; exit 1; }
 pkill -f "dashboard/app.py" 2>/dev/null; sleep 1
 (sleep 5; open http://localhost:8000) &
 echo "Drone tracker dashboard: http://localhost:8000"

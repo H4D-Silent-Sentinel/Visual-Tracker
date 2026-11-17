@@ -1,9 +1,11 @@
-"""Browser check of the Collect tab (run against a test server: PORT=8001)."""
+"""Browser check of the Collect tab (run against a test server: PORT=8001).
+Run: .venv/bin/python tests/browser/collect_test.py [http://localhost:8001]
+"""
 import json, sys
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 URL = sys.argv[1] if len(sys.argv) > 1 else "http://localhost:8001"
-O = Path(__file__).resolve().parent.parent / "runs/ui_check"
+O = Path(__file__).resolve().parents[2] / "runs/ui_check"
 ok = []
 def check(n, c, d=""): ok.append(bool(c)); print(("PASS " if c else "FAIL ") + n + (f"  [{d}]" if d else ""), flush=True)
 with sync_playwright() as p:

@@ -1,12 +1,12 @@
 """Browser check of the dashboard with the installed Chrome (Playwright). Prints PASS/FAIL lines.
-Run:  .venv/bin/python dashboard/ui_test.py [--camera]
+Run:  .venv/bin/python tests/browser/ui_test.py [--camera]
 """
 import json, sys, time
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 URL = "http://localhost:8000"
-SHOTS = Path(__file__).resolve().parent.parent / "runs" / "ui_check"
+SHOTS = Path(__file__).resolve().parents[2] / "runs" / "ui_check"
 SHOTS.mkdir(parents=True, exist_ok=True)
 results = []
 

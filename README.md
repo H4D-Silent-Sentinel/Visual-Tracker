@@ -7,20 +7,76 @@ Computer vision to track drones: YOLO11 detection + ByteTrack tracking. Runs on 
 
 ```
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
-.venv/bin/python prepare_dut.py            # needs the DUT Anti-UAV zips in ~/yolo-datasets/dut-anti-uav/zips
-.venv/bin/python prepare_negatives.py      # bird/kite photos from COCO
-.venv/bin/python prepare_tracking_split.py # v3 training frames
-.venv/bin/python make_web_clips.py         # browser copies of footage/ (footage is not in git)
+.venv/bin/python scripts/data/prepare_dut.py            # needs the DUT Anti-UAV zips in ~/yolo-datasets/dut-anti-uav/zips
+.venv/bin/python scripts/data/prepare_negatives.py      # bird/kite photos from COCO
+.venv/bin/python scripts/data/prepare_tracking_split.py # v3 training frames
+.venv/bin/python scripts/review/make_web_clips.py       # browser copies of footage/ (footage is not in git)
 .venv/bin/python dashboard/app.py          # http://localhost:8000
 ```
 Trained weights for v1, v2, v3 are in `runs/train/*/weights/best.pt`, test reports in `runs/false_alarms*/` and `runs/tracking_test*/`, and per-frame review files in `runs/review/`. Footage and datasets are not in the repo (size and licenses); see Data below for sources.
+
+## Project layout
+
+Run the commands below from the project root. The main tracker and VLM service stay at the root, and the dashboard starts with `dashboard/app.py`. Helper scripts are grouped by their job:
+
+| Folder | Scripts |
+|---|---|
+| `scripts/data/` | Dataset preparation: DUT conversion, bird/kite negatives, tracking split |
+| `scripts/evaluate/` | Clip evaluation, false-alarm and tracking benchmarks, VLM calibration |
+| `scripts/review/` | Browser clip conversion and per-frame review files |
+| `scripts/train/` | `run_v3.sh` and `retest_v2.sh` training/evaluation sequences |
+| `tests/` | Unit tests; browser checks and screenshots are in `tests/browser/` |
+
+## Local VLM verification
+
+YOLO and ByteTrack keep detecting and tracking. Optional VLM verification reviews a **new tracked flying-object candidate once**, after collecting its clearest crop for 0.5 seconds. Ordinary movement, box jitter, and elapsed time do not run the VLM again. A substantially larger/sharper view or reappearance after a lost identity is an update and can request a fresh review. Requests run in a background worker; completed verdicts are cached per track.
+
+The default is **Qwen3.5-2B-4bit**, running locally through MLX. Its pinned checkpoint and runtime packages are in `requirements.txt`; the scorer downloads the roughly 1.72 GB of weights on its first startup. This is the conservative choice for an Apple Silicon Mac with 8 GB total RAM. Qwen3.8 starts above that memory budget; Gemma 4 E2B's standard MLX weights are roughly 3.55 GB before runtime overhead. Model comparisons and sources are in [docs/vlm-model-selection.md](docs/vlm-model-selection.md). Drone accuracy and total memory/FPS must be tested on the target laptop, not inferred from general benchmarks or weight size. The pinned MLX wheels require Apple Silicon and macOS 26 or newer; use Python 3.11 or newer.
+
+Install `requirements.txt` as above, then start the scorer in one Terminal:
+
+```sh
+HF_HOME="$PWD/.venv/huggingface" .venv/bin/python vlm_server.py
+```
+
+Wait for `Scorer ready`, then use either the dashboard's **Live → Verify with local VLM** checkbox or the CLI in another Terminal:
+
+```sh
+.venv/bin/python track.py --verify --model runs/train/dut_v3_n960/weights/best.pt --imgsz 960
+# Add --source path/to/video.mp4 for a recorded clip.
+```
+
+The CLI accepts `--verify-confidence 0.85`. This initial threshold is provisional. Verification is opt-in; Clip Review continues to display its saved YOLO predictions.
+
+Candidates are cropped from raw frames, padded 25%, and conventionally resized while preserving aspect ratio. The scorer bounds its actual image preprocessing to 384 pixels per side. It uses one selected crop, no generated chain of thought, and no generative super-resolution. Tiny candidates below 12 native pixels stay unverified. Up to 32 track records and eight queued reviews are retained to bound memory; expired/reset identities cannot inherit stale results.
+
+Confident **yes** keeps a drone lock. Confident **no** removes the lock and shows **FALSE REVIEW: NOT A DRONE**. Pending reviews, low confidence, and errors remain visibly unverified. Restart/toggle verification after starting an unavailable scorer; failures do not cause timer-based retries.
+
+The local `POST http://127.0.0.1:8002/verify` endpoint accepts `{"image":"<base64 JPEG crop>"}` and returns a binary verdict and probability, for example:
+
+```json
+{"is_drone":false,"confidence":0.96,"p_drone":0.04,"raw_margin":-3.18,"calibrated":false,"model":"mlx-community/Qwen3.5-2B-4bit","prompt_hash":"...","model_revision":"..."}
+```
+
+This illustrates the schema, not a measured result. Python constructs the JSON from the VLM's first-token `yes`/`no` log probabilities. `p_drone` is normalized over those two labels; `confidence` is the selected label's probability. A raw score is **not measured accuracy**. The scorer never asks the model to invent a percentage.
+
+To calibrate, collect labeled scores with real `source_id`/`clip_id` and scorer identity into a dedicated calibration JSONL and a separate evaluation JSONL. Both classes must appear in calibration, and source/clip overlap is rejected. Then:
+
+```sh
+.venv/bin/python scripts/evaluate/calibrate_vlm.py --calibration scored-calibration.jsonl --evaluation scored-heldout.jsonl --output calibration.json
+HF_HOME="$PWD/.venv/huggingface" .venv/bin/python vlm_server.py --calibration calibration.json
+```
+
+The fit uses positive-temperature logistic calibration with a bias and reports raw/calibrated NLL, Brier score, reliability/ECE, confusion counts, and accepted-decision coverage on the separate evaluation set. Model/prompt/preprocessing identity mismatches reject the calibration file. No fitted drone calibration is shipped. [docs/vlm-confidence-research.md](docs/vlm-confidence-research.md) explains the methods, evidence, manifest format, and limitations.
+
+Run the new unit/integration checks with `.venv/bin/python -m unittest discover -s tests -v`. Browser checks are in `tests/browser/`.
 
 ## How to Run:
 
 Open Terminal and paste the following:
 
 ```
-cd ~/Documents/School/Fall\ 2026/Hacking\ 4\ Defense/yolo-tracker
+cd /path/to/Visual-Tracker
 source .venv/bin/activate
 python track.py
 ```
@@ -46,7 +102,7 @@ Press **q** in the video window to quit. The first webcam run asks for camera pe
 ## Test on recorded drone footage
 
 ```
-python eval_clips.py --model yolo11n.pt --imgsz 1280
+python scripts/evaluate/eval_clips.py --model yolo11n.pt --imgsz 1280
 ```
 
 Runs YOLO on the clips in `footage/` (public-domain / CC-licensed videos from Wikimedia Commons), saves annotated videos plus `report.json` to `runs/eval_<model>_<size>/`.
@@ -97,11 +153,11 @@ What changed:
 Run it:
 ```
 python track.py --model runs/train/dut_n960/weights/best.pt --imgsz 960 --source footage/army_balikatan_fpv.webm
-python eval_clips.py --model runs/train/dut_n960/weights/best.pt --imgsz 960
+python scripts/evaluate/eval_clips.py --model runs/train/dut_n960/weights/best.pt --imgsz 960
 ```
 (Don't add `--drone-like` with the trained model; that flag picks COCO classes.)
 
-Reproduce: `python prepare_dut.py`, then
+Reproduce: `python scripts/data/prepare_dut.py`, then
 `yolo detect train model=yolo11n.pt data=~/yolo-datasets/dut-anti-uav/dut.yaml imgsz=960 epochs=30 batch=16 device=mps`
 
 Dataset: DUT Anti-UAV (Zhao et al., Dalian University of Technology, arXiv:2205.10851), Apache-2.0, via huggingface.co/datasets/aegean-ai/dut-anti-uav.
@@ -126,20 +182,20 @@ Files it reads (none are written by the dashboard except under `our_data/` and `
 
 | File | Made by |
 |---|---|
-| `footage/web/*.mp4`, `index.json` | `make_web_clips.py`: browser-playable copies, frame-for-frame with the originals |
-| `runs/review/<output>/<clip>.json` | `make_review.py`: the model's boxes for every frame (generated Nov 17 for all 34 clips and 5 outputs) |
-| `runs/review/gt/*.json` | `make_review.py --gt-only`: true drone box per frame for the 20 tracking clips |
-| `runs/false_alarms*/`, `runs/tracking_test*/` | `test_false_alarms.py`, `test_tracking.py` |
+| `footage/web/*.mp4`, `index.json` | `scripts/review/make_web_clips.py`: browser-playable copies, frame-for-frame with the originals |
+| `runs/review/<output>/<clip>.json` | `scripts/review/make_review.py`: the model's boxes for every frame (generated Nov 17 for all 34 clips and 5 outputs) |
+| `runs/review/gt/*.json` | `scripts/review/make_review.py --gt-only`: true drone box per frame for the 20 tracking clips |
+| `runs/false_alarms*/`, `runs/tracking_test*/` | `scripts/evaluate/test_false_alarms.py`, `scripts/evaluate/test_tracking.py` |
 | `dashboard/demo_clips.json` | hand-picked demo clips |
 | `our_data/labels/`, `our_data/flags.json`, `our_data/hard_examples/` | your own labels and flagged frames; never mixed into the training folders automatically |
 
-Held-out rule: v3 trained on frames from 10 of the 20 tracking clips (see `prepare_tracking_split.py`), so v1/v2/v3 are only compared on the other 10. The dashboard reads the split from the actual training folder.
+Held-out rule: v3 trained on frames from 10 of the 20 tracking clips (see `scripts/data/prepare_tracking_split.py`), so v1/v2/v3 are only compared on the other 10. The dashboard reads the split from the actual training folder.
 
-`dashboard/ui_test.py` re-runs the browser checks. The previous live-stream dashboard is kept in `dashboard/old_live_tracker/`.
+`tests/browser/ui_test.py` re-runs the browser checks. The previous live-stream dashboard is kept in `dashboard/old_live_tracker/`.
 
 ## Test 1: false alarms on birds and kites (Nov 16)
 
-`python test_false_alarms.py` runs the trained model on 8 clips with no drones (flocks, seagulls, terns, pigeons, kites; `footage/negatives/`, Wikimedia Commons, CC/public domain).
+`python scripts/evaluate/test_false_alarms.py` runs the trained model on 8 clips with no drones (flocks, seagulls, terns, pigeons, kites; `footage/negatives/`, Wikimedia Commons, CC/public domain).
 
 | Confidence cutoff | Frames with a false "drone" box |
 |---|---|
@@ -151,7 +207,7 @@ Held-out rule: v3 trained on frames from 10 of the 20 tracking clips (see `prepa
 
 ## Test 2: real tracking on 20 videos (Nov 16)
 
-`python test_tracking.py` runs detection + ByteTrack on the 20 DUT Anti-UAV tracking videos (24,804 frames, true drone box marked in every frame). Seconds assume 30 fps.
+`python scripts/evaluate/test_tracking.py` runs detection + ByteTrack on the 20 DUT Anti-UAV tracking videos (24,804 frames, true drone box marked in every frame). Seconds assume 30 fps.
 
 | Metric | Result |
 |---|---|
@@ -169,7 +225,7 @@ The 20 videos are also saved as plain .mp4 in `footage/dut/` for the dashboard.
 
 ## v2: retrained with bird and kite photos (Nov 17)
 
-v2 = v1 trained 10 more passes with 2,100 COCO bird/kite photos marked "no drone" (`prepare_negatives.py`). Weights: `runs/train/dut_neg_n960/weights/best.pt`.
+v2 = v1 trained 10 more passes with 2,100 COCO bird/kite photos marked "no drone" (`scripts/data/prepare_negatives.py`). Weights: `runs/train/dut_neg_n960/weights/best.pt`.
 
 | Test | v1 | v2 |
 |---|---|---|
@@ -197,7 +253,7 @@ On all 20 clips: on target 91.7% to 94.1%, wrong-object box 5.2% to 10.5%. It ho
 
 ## v3: retrained with cluttered-background frames (Nov 17)
 
-v3 = v2 trained 10 more passes with every 4th frame of 10 DUT tracking clips (2,393 frames, `prepare_tracking_split.py`), to help with drones in front of trees and buildings. Weights: `runs/train/dut_v3_n960/weights/best.pt`.
+v3 = v2 trained 10 more passes with every 4th frame of 10 DUT tracking clips (2,393 frames, `scripts/data/prepare_tracking_split.py`), to help with drones in front of trees and buildings. Weights: `runs/train/dut_v3_n960/weights/best.pt`.
 
 Because v3 trained on 10 tracking clips, **tracking is compared only on the other 10** (video01, 03, 07, 08, 09, 10, 12, 14, 17, 18; 15,245 frames). v3's score on all 20 (95.7%) is inflated and should not be quoted.
 

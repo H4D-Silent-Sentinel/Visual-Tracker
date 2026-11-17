@@ -1,8 +1,8 @@
 """Run YOLO on recorded drone clips and summarize how often it finds the drone.
 
 Usage:
-  python eval_clips.py                       # default model and clips
-  python eval_clips.py --model yolo11s.pt --imgsz 1280
+  python scripts/evaluate/eval_clips.py                       # default model and clips
+  python scripts/evaluate/eval_clips.py --model yolo11s.pt --imgsz 1280
 
 There are no hand-drawn answer boxes for these clips, so "hit rate" means:
 the share of frames where YOLO reported at least one drone-like object

@@ -4,6 +4,8 @@ Expects ~/yolo-datasets/dut-anti-uav/zips/{train,val,test}.zip
 (from huggingface.co/datasets/aegean-ai/dut-anti-uav, folder detection/).
 Writes ~/yolo-datasets/dut-anti-uav/yolo/{images,labels}/{train,val,test}
 and dut.yaml for Ultralytics.
+
+Run: .venv/bin/python scripts/data/prepare_dut.py
 """
 import shutil, zipfile, xml.etree.ElementTree as ET
 from pathlib import Path

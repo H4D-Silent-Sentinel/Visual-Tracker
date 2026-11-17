@@ -729,7 +729,7 @@ class Camera(threading.Thread):
         meta = {**rec["meta"], "date": time.strftime("%Y-%m-%d %H:%M"), "frames": rec["frames"], "seconds": round(secs, 1),
                 "camera_index": self.index}
         (d / f"{rec['name']}.json").write_text(json.dumps(meta, indent=1))
-        r = subprocess.run([str(ROOT / ".venv/bin/python"), str(ROOT / "make_web_clips.py")], capture_output=True, text=True)
+        r = subprocess.run([str(ROOT / ".venv/bin/python"), str(ROOT / "scripts/review/make_web_clips.py")], capture_output=True, text=True)
         return {"ok": True, "name": rec["name"], "clip": f"ours__{rec['name']}", "frames": rec["frames"],
                 "seconds": round(secs, 1), "web_copy": (WEB / f"ours__{rec['name']}.mp4").exists(), "log": r.stdout[-300:]}
 

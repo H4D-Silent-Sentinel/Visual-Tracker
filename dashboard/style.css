@@ -203,6 +203,19 @@ body.hud .rec::before{content:"";display:inline-block;width:8px;height:8px;borde
 body.hud #lvStatus{border:1px solid currentColor;border-radius:8px;padding:7px 14px;font:500 14px var(--mono);letter-spacing:.12em}
 body.hud #lvStatus::before{content:"";display:inline-block;width:9px;height:9px;border-radius:50%;background:currentColor;box-shadow:0 0 12px currentColor;margin-right:9px;vertical-align:1px}
 body.hud #lvStatus.locked::before{animation:hudpulse 1.2s ease-in-out infinite}
+.lv-verify-control{font-size:12.5px;color:var(--muted);gap:6px 12px}
+.lv-verify-control input{accent-color:var(--accent)}
+.lv-verification{border:1px solid var(--line);border-left:3px solid var(--line2);border-radius:8px;background:var(--panel);padding:10px 12px;font-size:12.5px}
+#lvVerdict{font:500 12px var(--mono);overflow-wrap:anywhere}
+.lv-vlm-score{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-top:8px;color:var(--muted)}
+.lv-vlm-score b{font:500 20px var(--mono);color:var(--fg)}
+#lvVlmNote{margin-top:5px;color:var(--muted)}
+.lv-verification[data-status=confirmed]{border-left-color:var(--ok)}
+.lv-verification[data-status=confirmed] #lvVerdict{color:var(--ok)}
+.lv-verification[data-status=rejected]{border-left-color:var(--miss)}
+.lv-verification[data-status=rejected] #lvVerdict{color:var(--miss)}
+.lv-verification[data-status=pending],.lv-verification[data-status=uncertain],.lv-verification[data-status=error],.lv-verification[data-status=unverified]{border-left-color:var(--fa)}
+.lv-verification[data-status=pending] #lvVerdict,.lv-verification[data-status=uncertain] #lvVerdict,.lv-verification[data-status=error] #lvVerdict,.lv-verification[data-status=unverified] #lvVerdict{color:var(--fa)}
 body.hud .tele{border-radius:10px;background:var(--panel);overflow:hidden}
 body.hud .tele .v{font-size:30px}
 body.hud aside .tele>div{background:var(--panel2)}

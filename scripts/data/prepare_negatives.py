@@ -7,7 +7,7 @@ empty label file, which YOLO treats as "nothing to find here".
 
 The bird/kite videos in footage/negatives/ are NOT used here; they stay a clean test set.
 
-Run:  .venv/bin/python prepare_negatives.py
+Run:  .venv/bin/python scripts/data/prepare_negatives.py
 """
 import json, random, statistics, urllib.request, zipfile
 from concurrent.futures import ThreadPoolExecutor
