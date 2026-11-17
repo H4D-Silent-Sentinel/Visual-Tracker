@@ -29,6 +29,8 @@ Run the commands below from the project root. The main tracker and VLM service s
 
 ## Local VLM verification
 
+For a complete run, execute `./"Start Tracker.command"` from the project root, or double-click that file. It starts the cached local VLM and dashboard, waits for readiness, and opens Live with verification enabled. Choose a camera or clip in the Live source menu. Keep the Terminal open; Ctrl-C stops only services the launcher started. Existing services are reused.
+
 YOLO and ByteTrack keep detecting and tracking. Optional VLM verification reviews a **new tracked flying-object candidate once**, after collecting its clearest crop for 0.5 seconds. Ordinary movement, box jitter, and elapsed time do not run the VLM again. A substantially larger/sharper view or reappearance after a lost identity is an update and can request a fresh review. Requests run in a background worker; completed verdicts are cached per track.
 
 The default is **Qwen3.5-2B-4bit**, running locally through MLX. Its pinned checkpoint and runtime packages are in `requirements.txt`; the scorer downloads the roughly 1.72 GB of weights on its first startup. This is the conservative choice for an Apple Silicon Mac with 8 GB total RAM. Qwen3.8 starts above that memory budget; Gemma 4 E2B's standard MLX weights are roughly 3.55 GB before runtime overhead. Model comparisons and sources are in [docs/vlm-model-selection.md](docs/vlm-model-selection.md). Drone accuracy and total memory/FPS must be tested on the target laptop, not inferred from general benchmarks or weight size. The pinned MLX wheels require Apple Silicon and macOS 26 or newer; use Python 3.11 or newer.
