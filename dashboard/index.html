@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Drone Hide and Seek · Clip Review</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@400;500;600&display=swap">
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
@@ -87,8 +88,9 @@
 <div class="review">
   <div class="main">
     <div class="clipbar"><h1 id="lvTitle">Live</h1><span class="tag">model runs on every frame as it plays</span><span class="showing" id="lvStatus">—</span></div>
-    <div class="player" id="lvPlayer" style="aspect-ratio:16/9;max-width:calc(60vh * 1.7778)"><img id="lvImg" alt="Live video with the model's boxes" style="width:100%;height:100%;object-fit:contain;display:block"></div>
+    <div class="player" id="lvPlayer" style="aspect-ratio:16/9;max-width:calc(60vh * 1.7778)"><img id="lvImg" alt="Live video with the model's boxes" style="width:100%;height:100%;object-fit:contain;display:block"><div class="corner c1"></div><div class="corner c2"></div><div class="corner c3"></div><div class="corner c4"></div><div class="rec">LIVE</div></div>
     <div class="prog"><i id="lvProg"></i></div>
+    <div id="lvErr" class="note" role="status" hidden style="border-left-color:var(--miss);color:var(--fg);margin:8px 0 0"></div>
     <div class="ctl">
       <button class="btn" id="lvPrev" title="[">◀ Prev</button>
       <select id="lvSource" aria-label="Video or camera" style="flex:1;min-width:180px"></select>
@@ -162,6 +164,10 @@
         <label>Notes<input type="text" id="mNotes"></label>
       </div>
       <div id="camStatus" class="mono muted" style="margin-top:8px" aria-live="polite"></div>
+
+      <h2>Our recordings</h2>
+      <p class="cap">Clips recorded here. Delete removes the video, its browser copy, its labels and its flags. It cannot be undone.</p>
+      <div id="oursList"></div>
 
       <h2>Hard examples</h2>
       <p class="cap">Frames flagged in Clip Review with <kbd>M</kbd> or <kbd>F</kbd>. Export copies them to <span class="mono">our_data/hard_examples/</span>; nothing is added to a training set automatically.</p>

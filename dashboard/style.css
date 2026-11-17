@@ -170,4 +170,26 @@ dialog .dc{display:flex;justify-content:space-between;gap:16px;align-items:cente
 .lab canvas{position:absolute;inset:0;width:100%;height:100%;cursor:crosshair}
 .flagrow{display:grid;grid-template-columns:96px 1fr auto;gap:10px;align-items:center;border-bottom:1px solid var(--line);padding:6px 0}
 .flagrow img{width:96px;aspect-ratio:16/9;object-fit:cover;display:block;background:#000}
-@media (prefers-reduced-motion:reduce){*{scroll-behavior:auto}}
+/* ---- Live tab: the original tactical HUD look (navy, IBM Plex, teal lock, corner marks) ---- */
+body.hud{--bg:#060b14;--panel:#0b1324;--panel2:#0e1729;--line:#22324d;--line2:#33476b;--fg:#e6edf7;--muted:#8b9cb6;--dim:#5f6f8a;
+  --accent:#3fe0c5;--accentbg:#0f2f33;--ok:#3fe0c5;--fa:#ffb547;--miss:#ff5d5d;--sans:"IBM Plex Sans Condensed","Arial Narrow",system-ui,sans-serif;--mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+  background:var(--bg);font-family:var(--sans)}
+body.hud .brand{font-size:17px}
+body.hud #lvPlayer{border-radius:10px;overflow:hidden;border-color:var(--line)}
+body.hud .corner{position:absolute;width:26px;height:26px;border-color:var(--accent);border-style:solid;opacity:.75;pointer-events:none}
+body.hud .c1{top:10px;left:10px;border-width:2px 0 0 2px}body.hud .c2{top:10px;right:10px;border-width:2px 2px 0 0}
+body.hud .c3{bottom:10px;left:10px;border-width:0 0 2px 2px}body.hud .c4{bottom:10px;right:10px;border-width:0 2px 2px 0}
+body.hud .rec{position:absolute;right:16px;top:14px;font:500 12px var(--mono);color:#ff6b3d;background:rgba(6,11,20,.75);padding:4px 8px;border-radius:4px}
+body.hud .rec::before{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;background:#ff6b3d;margin-right:6px;animation:hudpulse 1s infinite}
+body.hud #lvStatus{border:1px solid currentColor;border-radius:8px;padding:7px 14px;font:500 14px var(--mono);letter-spacing:.12em}
+body.hud #lvStatus::before{content:"";display:inline-block;width:9px;height:9px;border-radius:50%;background:currentColor;box-shadow:0 0 12px currentColor;margin-right:9px;vertical-align:1px}
+body.hud #lvStatus.locked::before{animation:hudpulse 1.2s ease-in-out infinite}
+body.hud .tele{border-radius:10px;background:var(--panel);overflow:hidden}
+body.hud .tele .v{font-size:30px}
+body.hud aside .tele>div{background:var(--panel2)}
+body.hud aside canvas,body.hud aside table{border-radius:8px}
+body.hud aside h3{letter-spacing:.14em}
+body.hud .btn{border-radius:6px}
+body.hud .prog{border-radius:0 0 4px 4px}
+@keyframes hudpulse{50%{opacity:.35}}
+@media (prefers-reduced-motion:reduce){*{scroll-behavior:auto}body.hud .rec::before,body.hud #lvStatus.locked::before{animation:none}}

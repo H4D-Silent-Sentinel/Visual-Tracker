@@ -10,6 +10,15 @@ async function collectLoad() {
     : '<div class="empty">Nothing flagged yet. In Clip Review, pause on a bad frame and press M (miss) or F (false alarm).</div>';
   $('flagList').querySelectorAll('[data-open]').forEach(b => b.onclick = () => {const [k, f, o] = b.dataset.open.split('|'); openClip(k, +f, o || undefined)});
   $('flagList').querySelectorAll('[data-rm]').forEach(b => b.onclick = async () => {await api('/api/flag', {remove: b.dataset.rm}); collectLoad()});
+  $('oursList').innerHTML = d.recordings.length ? d.recordings.map(r => `<div class="flagrow"><img loading="lazy" src="/thumb?kind=clip&clip=${r.clip}&w=192" alt=""><div><b>${esc(r.name.replace('ours_', ''))}</b> · ${r.seconds} s${r.labeled ? ' · ' + r.labeled + ' labeled' : ''}<div class="muted" style="font-size:12px">${esc([r.meta.location, r.meta.drone_type, r.meta.background].filter(Boolean).join(' · ') || 'no details entered')}</div></div><div><button class="btn" data-review="${r.clip}">Review</button> <button class="btn" data-label="${r.clip}">Label</button> <button class="btn" data-del="${esc(r.name)}">Delete</button></div></div>`).join('')
+    : '<div class="empty">No recordings yet.</div>';
+  $('oursList').querySelectorAll('[data-review]').forEach(b => b.onclick = () => openClip(b.dataset.review, 0));
+  $('oursList').querySelectorAll('[data-label]').forEach(b => b.onclick = () => {$('labClip').value = b.dataset.label; labLoad(b.dataset.label); $('labBox').scrollIntoView({block: 'center'})});
+  $('oursList').querySelectorAll('[data-del]').forEach(b => b.onclick = async () => {
+    if (b.dataset.armed !== '1') {b.dataset.armed = '1'; b.textContent = 'Click again to delete'; b.classList.add('rec'); setTimeout(() => {if (b.isConnected) {b.dataset.armed = ''; b.textContent = 'Delete'; b.classList.remove('rec')}}, 4000); return}
+    b.textContent = 'Deleting…'; const r = await api('/api/recording/delete', {name: b.dataset.del});
+    if (!r.ok) {b.textContent = 'Delete failed'; return}
+    toast(`Deleted ${b.dataset.del}.`); await refreshClips(); collectLoad()});
   $('covTable').innerHTML = '<tr><th>Source</th><th>Type</th><th>Background</th><th class="num">Clips</th><th class="num">Minutes</th><th class="num">Labeled frames</th></tr>' +
     d.coverage.map(r => `<tr><td>${esc(r.source)}</td><td>${esc(r.kind)}</td><td>${esc(r.background)}</td><td class="num">${r.clips}</td><td class="num">${(r.seconds / 60).toFixed(1)}</td><td class="num">${r.labeled_frames.toLocaleString()}</td></tr>`).join('') +
     (d.ours.length ? '' : '<tr><td colspan="6" class="muted">No footage of our own yet. Nothing at night, in rain, or from our own camera.</td></tr>');

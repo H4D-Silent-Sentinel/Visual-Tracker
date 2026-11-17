@@ -70,7 +70,30 @@ def default_model():
 def list_sources():
     vids = [str(p.relative_to(ROOT)) for p in (ROOT / "footage").rglob("*") if p.suffix.lower() in VIDEO_EXT and "web" not in p.relative_to(ROOT).parts]
     vids.sort(key=lambda v: (0 if "/dut/" in v else 2 if "/negatives/" in v else 1, v))
-    return vids + ["camera:0", "camera:1", "camera:2"]
+    return vids + [f"camera:{i}" for i in camera_names()]
+
+
+_cams = {}
+
+
+def camera_names():
+    """Real cameras macOS reports, in OpenCV's order: {index: name}. Skips Desk View and screen capture."""
+    if "t" not in _cams or time.time() - _cams["t"] > 15:
+        import re, subprocess
+        names = {}
+        try:
+            out = subprocess.run(["ffmpeg", "-hide_banner", "-f", "avfoundation", "-list_devices", "true", "-i", ""],
+                                 capture_output=True, text=True, timeout=10).stderr
+            vid = out.split("video devices:")[1].split("audio devices:")[0]
+            # OpenCV numbers only real cameras (no Desk View, no screen capture), in macOS's order,
+            # so its index is the position in this filtered list, not ffmpeg's number.
+            real = [n.strip() for _, n in re.findall(r"\[(\d+)\] (.+)", vid)
+                    if "Desk View" not in n and not n.startswith("Capture screen")]
+            names = dict(enumerate(real))
+        except Exception:
+            names = {0: "Camera 0", 1: "Camera 1", 2: "Camera 2"}
+        _cams.update(t=time.time(), names=names)
+    return _cams["names"]
 
 
 def group_of(rel):
@@ -345,7 +368,17 @@ class Engine(threading.Thread):
             ok, frame = cap.read()
             if not ok:
                 if live:
-                    time.sleep(0.2)
+                    name = camera_names().get(int(s["source"].split(":")[1]), s["source"])
+                    why = ("could not be opened" if not cap.isOpened() else "is connected but sends no picture")
+                    with self.lock:
+                        self.stats = {**self.stats, "status": "NO_CAMERA", "settings": s,
+                                      "error": f"{name} {why}. For an iPhone: lock it, hold it sideways, keep it near the Mac, "
+                                               f"and make sure no other app (FaceTime, Zoom) is using it. If this keeps happening, "
+                                               f"restart the dashboard from Terminal and allow camera access."}
+                    time.sleep(0.5)
+                    if not cap.isOpened():
+                        cap.release()
+                        cap, fps_in, live, total = self.open_source(s["source"])
                     continue
                 cap.set(cv2.CAP_PROP_POS_FRAMES, 0)  # loop the clip
                 model.predictor = None
@@ -414,6 +447,7 @@ class Engine(threading.Thread):
                 if ok:
                     self.jpeg = buf.tobytes()
                 self.stats = {
+                    "error": None,
                     "status": status, "device": DEVICE, "settings": s, "fps": round(self.fps, 1),
                     "source_fps": round(fps_in, 1), "frames": self.frames, "pos": pos, "total": total,
                     "locked_pct": round(100 * self.locked / self.frames, 1),

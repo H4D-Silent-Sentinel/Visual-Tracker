@@ -773,7 +773,38 @@ def collect_payload():
     idx = clip_index()
     labeled = {k: len(list(labels_dir(k).glob("*.txt"))) for k in idx if labels_dir(k).exists()}
     return {"flags": flags_load(), "labeled": labeled, "coverage": coverage(), "camera": CAM.state(),
-            "ours": [k for k, c in idx.items() if c["group"] == "ours"]}
+            "ours": [k for k, c in idx.items() if c["group"] == "ours"],
+            "recordings": [{"clip": k, "name": c["name"], "seconds": round(c["frames"] / c["fps"], 1), "labeled": labeled.get(k, 0),
+                            "meta": read_json(ROOT / "footage" / "ours" / f"{c['name']}.json", {})}
+                           for k, c in sorted(idx.items(), reverse=True) if c["group"] == "ours"]}
+
+
+def recording_delete(name):
+    """Delete one of OUR recordings and everything made from it. Public footage cannot be deleted here."""
+    import re as _re
+    import shutil
+    if not _re.fullmatch(r"ours_\d{8}_\d{6}", name or ""):
+        return {"ok": False, "error": "only our own recordings can be deleted here"}
+    key = f"ours__{name}"
+    removed = []
+    with FILE_LOCK:
+        for p in [ROOT / "footage" / "ours" / f"{name}.mp4", ROOT / "footage" / "ours" / f"{name}.json", WEB / f"{key}.mp4"]:
+            if p.exists():
+                p.unlink()
+                removed.append(str(p.relative_to(ROOT)))
+        for d in [OURS / "labels" / key, OURS / "images" / key]:
+            if d.exists():
+                shutil.rmtree(d)
+                removed.append(str(d.relative_to(ROOT)))
+        for t in THUMBS.glob(f"clip_{key}_*.jpg"):
+            t.unlink()
+        idx = clip_index()
+        if key in idx:
+            del idx[key]
+            (WEB / "index.json").write_text(json.dumps(idx, indent=1))
+        fl = flags_load()
+        flags_save([x for x in fl if x["clip"] != key])
+    return {"ok": True, "removed": removed}
 
 
 # ------------------------------------------------------------------ http
@@ -866,6 +897,7 @@ class Handler(BaseHTTPRequestHandler):
                 L = live()
                 ok = {m: run_status(m)["usable"] for m in MODELS}
                 return self.send_json({"sources": L.list_sources(), "training_active": training_active(),
+                                       "camera_names": {f"camera:{i}": n for i, n in L.camera_names().items()},
                                        "models": [{"id": k, "label": v[1], "ok": v[0].exists() and ok.get(k, True)} for k, v in L.MODELS.items()]})
             if p == "/live/set":
                 live().ENGINE.update(**q)
@@ -930,6 +962,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(flag_remove(d["remove"]) if d.get("remove") else flag_add(d))
             if u.path == "/api/flags/export":
                 return self.send_json(flags_export())
+            if u.path == "/api/recording/delete":
+                return self.send_json(recording_delete(d.get("name")))
             if u.path == "/api/label":
                 return self.send_json(label_save(d))
             if u.path == "/api/cam":

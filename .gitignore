@@ -33,3 +33,7 @@ runs/false_alarms*/*
 runs/tracking_test*/*
 !runs/tracking_test*/report.json
 !runs/review/
+
+# Duplicate copies macOS/iCloud makes on sync conflicts ("file 2.py")
+* 2.*
+* 2

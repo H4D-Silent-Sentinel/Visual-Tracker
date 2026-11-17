@@ -41,6 +41,7 @@ function show(tab) {
   TAB = tab;
   document.querySelectorAll('nav button').forEach(b => b.dataset.tab === tab ? b.setAttribute('aria-current', 'page') : b.removeAttribute('aria-current'));
   ['live', 'review', 'results', 'pool', 'collect'].forEach(x => $('tab-' + x).hidden = x !== tab);
+  document.body.classList.toggle('hud', tab === 'live');
   if (tab !== 'review') $('vid').pause();
   if (tab === 'results') resultsLoad();
   if (tab === 'pool') poolLoad();

@@ -5,9 +5,9 @@ const lnice = s => s.replace('footage/dut/', 'Tracking: ').replace('footage/nega
 async function liveEnter() {
   $('lvStatus').textContent = 'STARTING (loading the model)…';
   const d = await api('/live/sources');
-  LV.sources = d.sources;
+  LV.sources = d.sources; LV.cams = d.camera_names || {};
   const groups = [['Tracking test videos', s => s.includes('/dut/')], ['Demo flights', s => s.startsWith('footage/') && !/\/(dut|negatives|ours)\//.test(s)], ['No drone: birds and kites', s => s.includes('/negatives/')], ['Our footage', s => s.includes('/ours/')], ['Live cameras', s => s.startsWith('camera:')]];
-  $('lvSource').innerHTML = groups.map(([g, f]) => {const xs = d.sources.filter(f); return xs.length ? `<optgroup label="${g}">${xs.map(s => `<option value="${esc(s)}">${esc(lnice(s))}</option>`).join('')}</optgroup>` : ''}).join('');
+  $('lvSource').innerHTML = groups.map(([g, f]) => {const xs = d.sources.filter(f); return xs.length ? `<optgroup label="${g}">${xs.map(s => `<option value="${esc(s)}">${esc(LV.cams[s] ? LV.cams[s] + (/iphone|\(\d\) camera/i.test(LV.cams[s]) || !/macbook|facetime/i.test(LV.cams[s]) ? ' (phone)' : '') : lnice(s))}</option>`).join('')}</optgroup>` : ''}).join('');
   $('lvModel').innerHTML = d.models.map(m => `<option value="${m.id}" ${m.ok ? '' : 'disabled'}>${esc(m.label)}${m.ok ? '' : ' (not finished)'}</option>`).join('');
   if (d.training_active) $('lvNote').insertAdjacentHTML('beforeend', LV.warned ? '' : ' <span class="fa">▲ A training job is running; this view slows it down while it is open.</span>');
   LV.warned = true;
@@ -42,10 +42,11 @@ async function liveTick() {
   try {
     const s = await api('/live/stats');
     if (s.settings) {
-      const words = {LOCKED: '● TARGET LOCKED', COASTING: '◐ COASTING (just lost it)', SEARCHING: '○ SEARCHING', IDLE: 'STARTING…'};
-      const el = $('lvStatus'); el.textContent = s.settings.paused ? '❚❚ PAUSED' : (words[s.status] || s.status);
+      const words = {LOCKED: 'TARGET LOCKED', COASTING: 'COASTING (just lost it)', SEARCHING: 'SEARCHING', IDLE: 'STARTING…', NO_CAMERA: 'NO CAMERA PICTURE'};
+      const el = $('lvStatus'); el.classList.toggle('locked', s.status === 'LOCKED' && !s.settings.paused); el.textContent = s.settings.paused ? '❚❚ PAUSED' : (words[s.status] || s.status);
+      $('lvErr').hidden = !s.error; $('lvErr').textContent = s.error ? '✕ ' + s.error : '';
       el.style.color = s.status === 'LOCKED' ? 'var(--ok)' : s.status === 'COASTING' ? 'var(--fa)' : s.status === 'SEARCHING' ? 'var(--miss)' : 'var(--muted)';
-      $('lvTitle').textContent = lnice(s.settings.source);
+      $('lvTitle').textContent = LV.cams[s.settings.source] || lnice(s.settings.source);
       if (document.activeElement !== $('lvTracker') && $('lvTracker').value !== s.settings.tracker) {$('lvTracker').value = s.settings.tracker; liveHoldNote(s.settings.tracker)}
       for (const [id, k] of [['lvSource', 'source'], ['lvModel', 'model']]) if (document.activeElement !== $(id) && $(id).value !== s.settings[k]) $(id).value = s.settings[k];
       if (s.total) {$('lvProg').style.width = (100 * s.pos / s.total) + '%'; $('lvTime').textContent = mmss(s.pos / s.source_fps) + ' / ' + mmss(s.total / s.source_fps)} else {$('lvProg').style.width = '0'; $('lvTime').textContent = 'live'}
