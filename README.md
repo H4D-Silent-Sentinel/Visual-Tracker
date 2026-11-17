@@ -15,9 +15,9 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 ```
 Trained weights for v1, v2, v3 are in `runs/train/*/weights/best.pt`, test reports in `runs/false_alarms*/` and `runs/tracking_test*/`, and per-frame review files in `runs/review/`. Footage and datasets are not in the repo (size and licenses); see Data below for sources.
 
-## Run it
+## How to Run:
 
-Open Terminal and paste:
+Open Terminal and paste the following:
 
 ```
 cd ~/Documents/School/Fall\ 2026/Hacking\ 4\ Defense/yolo-tracker
@@ -29,7 +29,7 @@ Press **q** in the video window to quit. The first webcam run asks for camera pe
 
 ## Options
 
-| Command | What it does |
+| Command | Output |
 |---|---|
 | `python track.py` | Webcam, every object type |
 | `python track.py --drone-like` | Only bird, kite, airplane (closest to "drone" until we fine-tune) |
@@ -51,7 +51,7 @@ python eval_clips.py --model yolo11n.pt --imgsz 1280
 
 Runs YOLO on the clips in `footage/` (public-domain / CC-licensed videos from Wikimedia Commons), saves annotated videos plus `report.json` to `runs/eval_<model>_<size>/`.
 
-### First results (Nov 15, stock COCO models, no drone training yet)
+### First results (Nov 15, stock models, no drone training yet)
 
 | Clip | yolo11n @640 | yolo11n @1280 | yolo11m @1280 |
 |---|---|---|---|
