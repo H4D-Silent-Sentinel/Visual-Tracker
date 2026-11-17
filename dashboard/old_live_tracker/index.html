@@ -1,0 +1,401 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Drone Hide & Seek Tracker</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@400;500;600&display=swap">
+<style>
+/* Tactical HUD, single dark look on purpose. Three tabs: Live tracker, Data pool, Results. */
+:root{
+  --bg:#060b14; --panel:#0b1324; --panel2:#101a2e; --line:#22324d; --line2:#33476b; --fg:#e6edf7; --muted:#8b9cb6;
+  --lock:#3fe0c5; --lockbg:#0f2f33; --warn:#ffb547; --hostile:#ff6b3d; --off:#ff5d5d; --good:#57d98a;
+  --display:"IBM Plex Sans Condensed","Arial Narrow",system-ui,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--display);font-size:16px}
+body{padding:0 max(18px,env(safe-area-inset-right,0px)) 32px max(18px,env(safe-area-inset-left,0px))}
+button{font:inherit;color:inherit}
+.wrap{max-width:1500px;margin:0 auto}
+header{position:sticky;top:0;z-index:20;background:rgba(6,11,20,.92);backdrop-filter:blur(8px);display:flex;align-items:center;gap:18px;flex-wrap:wrap;padding:14px 0 12px;border-bottom:1px solid var(--line);margin-bottom:18px}
+.brand{font-weight:600;font-size:21px;line-height:1.1}
+.brand small{display:block;font-family:var(--mono);font-size:10.5px;color:var(--muted);font-weight:400;letter-spacing:.1em;margin-top:3px}
+nav{display:flex;gap:4px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:4px}
+nav button{background:none;border:0;border-radius:7px;padding:8px 16px;font-size:15px;font-weight:500;color:var(--muted);cursor:pointer}
+nav button:hover{color:var(--fg)}
+nav button.on{background:var(--lockbg);color:var(--lock)}
+.status{margin-left:auto;display:flex;align-items:center;gap:10px;font-family:var(--mono);font-weight:500;font-size:14px;letter-spacing:.12em;padding:8px 14px;border-radius:8px;border:1px solid currentColor;color:var(--muted)}
+.status i{width:10px;height:10px;border-radius:50%;background:currentColor;box-shadow:0 0 12px currentColor}
+.status.LOCKED{color:var(--lock)} .status.COASTING{color:var(--warn)} .status.SEARCHING{color:var(--off)}
+.status.LOCKED i{animation:pulse 1.2s ease-in-out infinite}
+@keyframes pulse{50%{opacity:.35}}
+section[hidden]{display:none}
+h2{font-size:22px;font-weight:600;margin:28px 0 4px}
+h2:first-child{margin-top:0}
+.sub{color:var(--muted);font-size:15px;margin:0 0 14px;max-width:900px;line-height:1.45}
+.lbl{font-family:var(--mono);font-weight:500;font-size:11px;letter-spacing:.14em;color:var(--muted);text-transform:uppercase}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;min-width:0}
+.card>.lbl{display:block;margin-bottom:10px}
+
+/* live */
+.grid{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:16px}
+@media (max-width:1020px){.grid{grid-template-columns:minmax(0,1fr)}}
+.stage{position:relative;background:#000;border:1px solid var(--line);border-radius:10px 10px 0 0;overflow:hidden;aspect-ratio:16/9}
+.stage img{width:100%;height:100%;object-fit:contain;display:block}
+.corner{position:absolute;width:26px;height:26px;border-color:var(--lock);border-style:solid;opacity:.7}
+.c1{top:10px;left:10px;border-width:2px 0 0 2px}.c2{top:10px;right:10px;border-width:2px 2px 0 0}
+.c3{bottom:10px;left:10px;border-width:0 0 2px 2px}.c4{bottom:10px;right:10px;border-width:0 2px 2px 0}
+.ovl{position:absolute;left:16px;bottom:14px;font-family:var(--mono);font-size:12px;color:var(--fg);background:rgba(6,11,20,.75);padding:4px 8px;border-radius:4px}
+.rec{position:absolute;right:16px;top:14px;font-family:var(--mono);font-size:12px;color:var(--hostile);background:rgba(6,11,20,.75);padding:4px 8px;border-radius:4px}
+.rec::before{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--hostile);margin-right:6px;animation:pulse 1s infinite}
+.prog{height:4px;background:var(--panel2)}.prog i{display:block;height:100%;width:0;background:var(--lock)}
+.bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:var(--panel);border:1px solid var(--line);border-top:0;border-radius:0 0 10px 10px;padding:10px 12px}
+.bar select{flex:1;min-width:200px}
+.btn{background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:8px 12px;font-family:var(--mono);font-size:12.5px;cursor:pointer;white-space:nowrap}
+.btn:hover{border-color:var(--line2)}
+.btn.pri{background:var(--lockbg);border-color:#1f5a5c;color:var(--lock)}
+.time{font-family:var(--mono);font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums;min-width:96px;text-align:right}
+.panels{margin-top:14px;display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:12px}
+.fields{display:grid;gap:12px}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+label{display:flex;flex-direction:column;gap:6px;font-size:14px;color:var(--muted)}
+label b{color:var(--fg);font-weight:500;font-family:var(--mono);font-size:13px}
+label .row{display:flex;justify-content:space-between}
+select,input[type=number]{background:var(--panel2);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:8px;font-family:var(--mono);font-size:13px;min-width:0;width:100%}
+input[type=range]{accent-color:var(--lock);width:100%}
+.hint{font-size:13px;color:var(--muted);line-height:1.4}
+.side{display:flex;flex-direction:column;gap:12px;min-width:0}
+.big{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.m{background:var(--panel2);border-radius:8px;padding:10px 12px}
+.m .v{font-size:28px;font-weight:600;font-variant-numeric:tabular-nums;margin-top:2px}
+.m .v small{font-size:14px;color:var(--muted);font-weight:400;margin-left:3px}
+.rows{display:grid;grid-template-columns:auto auto;row-gap:7px;font-family:var(--mono);font-size:13px}
+.rows span:nth-child(even){text-align:right;font-variant-numeric:tabular-nums}
+.rows span:nth-child(odd){color:var(--muted)}
+canvas{width:100%;display:block}
+kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--line2);border-radius:4px;padding:1px 5px;color:var(--fg)}
+
+/* data pool */
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin-bottom:8px}
+.tile .n{font-size:34px;font-weight:600;font-variant-numeric:tabular-nums;line-height:1.1}
+.tile .d{color:var(--muted);font-size:14px;margin-top:4px;line-height:1.35}
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.chip{background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:7px 14px;font-size:14px;color:var(--muted);cursor:pointer}
+.chip:hover{border-color:var(--line2);color:var(--fg)}
+.chip.on{background:var(--lockbg);border-color:#1f5a5c;color:var(--lock)}
+.chip span{font-family:var(--mono);font-size:12px;margin-left:6px;opacity:.8}
+.note{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--lock);border-radius:6px;padding:10px 14px;font-size:14px;color:var(--muted);margin-bottom:12px;line-height:1.45}
+.note b{color:var(--fg);font-weight:500}
+.imgs{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+.th{position:relative;padding:0;border:1px solid var(--line);border-radius:6px;overflow:hidden;background:#000;cursor:zoom-in;aspect-ratio:4/3}
+.th:hover{border-color:var(--lock)}
+.th img{width:100%;height:100%;object-fit:cover;display:block}
+.th span{position:absolute;left:5px;bottom:5px;font-family:var(--mono);font-size:10.5px;background:rgba(6,11,20,.8);padding:2px 6px;border-radius:3px}
+.th span.neg{color:var(--warn)} .th span.pos{color:var(--lock)}
+.more{display:flex;align-items:center;gap:14px;margin-top:12px;color:var(--muted);font-family:var(--mono);font-size:12px}
+.vids{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px}
+.vid{background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden;display:flex;flex-direction:column}
+.vid .pic{position:relative;aspect-ratio:16/9;background:#000}
+.vid .pic img{width:100%;height:100%;object-fit:cover;display:block}
+.vid .pic span{position:absolute;right:6px;bottom:6px;font-family:var(--mono);font-size:11px;background:rgba(6,11,20,.8);padding:2px 6px;border-radius:3px}
+.vid .body{padding:10px 12px 12px;display:flex;flex-direction:column;gap:6px;flex:1}
+.vid .t{font-weight:500;font-size:16px;overflow-wrap:anywhere}
+.vid .meta{font-family:var(--mono);font-size:11.5px;color:var(--muted)}
+.vid .res{font-size:14px;color:var(--muted);line-height:1.4}
+.vid .res b{font-weight:600;font-variant-numeric:tabular-nums}
+.vid .btn{margin-top:auto;align-self:flex-start}
+.g{color:var(--good)} .y{color:var(--warn)} .r{color:var(--off)}
+.gh{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin:22px 0 10px}
+.gh h3{margin:0;font-size:18px;font-weight:600}
+.gh span{color:var(--muted);font-size:14px}
+dialog{background:var(--panel);color:var(--fg);border:1px solid var(--line2);border-radius:10px;padding:12px;max-width:min(1240px,94vw)}
+dialog::backdrop{background:rgba(0,0,0,.75)}
+dialog img{max-width:100%;max-height:78vh;display:block;border-radius:6px}
+dialog .cap{display:flex;justify-content:space-between;gap:16px;align-items:center;margin-top:10px;font-family:var(--mono);font-size:12px;color:var(--muted)}
+
+/* results */
+.tablewrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:15px;min-width:560px}
+th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line)}
+th{font-family:var(--mono);font-weight:500;font-size:11px;letter-spacing:.1em;color:var(--muted);text-transform:uppercase}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;font-family:var(--mono)}
+tr.grp td{font-family:var(--mono);font-size:11px;letter-spacing:.12em;color:var(--lock);padding-top:18px;border-bottom-color:var(--line2)}
+td small{color:var(--muted);display:block;font-size:13px}
+.bars{display:grid;grid-template-columns:minmax(120px,200px) 1fr;gap:8px 14px;align-items:center;font-size:14px}
+.bars .pair{display:grid;gap:3px}
+.bars .b{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:12px}
+.bars .b i{display:block;height:10px;border-radius:2px;min-width:2px}
+.b.v1 i{background:#5d6f8f}.b.v2 i{background:var(--lock)}
+.legend{display:flex;gap:18px;flex-wrap:wrap;font-size:14px;color:var(--muted);margin-bottom:12px}
+.legend i{display:inline-block;width:12px;height:12px;border-radius:2px;margin-right:6px;vertical-align:-1px}
+button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--lock);outline-offset:2px}
+@media (prefers-reduced-motion:reduce){.status.LOCKED i,.rec::before{animation:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <div class="brand">Drone Hide &amp; Seek<small>VISUAL TRACKER · YOLO + BYTETRACK</small></div>
+  <nav aria-label="Views">
+    <button data-tab="live" class="on">Live tracker</button>
+    <button data-tab="pool">Data pool</button>
+    <button data-tab="results">Results</button>
+  </nav>
+  <div class="status" id="status"><i></i><span id="statusText">CONNECTING</span></div>
+</header>
+
+<!-- ============ LIVE ============ -->
+<section id="tab-live">
+<div class="grid">
+  <div>
+    <div class="stage">
+      <img id="video" alt="Live annotated video from the tracker">
+      <div class="corner c1"></div><div class="corner c2"></div><div class="corner c3"></div><div class="corner c4"></div>
+      <div class="rec">LIVE</div>
+      <div class="ovl" id="srcLabel">—</div>
+    </div>
+    <div class="prog"><i id="prog"></i></div>
+    <div class="bar">
+      <button class="btn" id="prev" title="Previous video ( [ )">◀ Prev</button>
+      <select id="source" aria-label="Video or camera"></select>
+      <button class="btn" id="next" title="Next video ( ] )">Next ▶</button>
+      <button class="btn pri" id="pause" title="Space">Pause</button>
+      <button class="btn" id="restart" title="R">Restart</button>
+      <span class="time" id="time">—</span>
+    </div>
+    <div class="panels">
+      <div class="card"><span class="lbl">Detector</span>
+        <div class="fields">
+          <label>Model<select id="model"></select></label>
+          <label><span class="row">Confidence cutoff <b id="confV">0.35</b></span><input type="range" id="conf" min="0.05" max="0.9" step="0.05" value="0.35"></label>
+          <label>Image size<select id="imgsz"><option value="640">640 px (fastest)</option><option value="960" selected>960 px (trained size)</option><option value="1280">1280 px (small targets)</option></select></label>
+        </div>
+      </div>
+      <div class="card"><span class="lbl">Range estimate (mil relation)</span>
+        <div class="fields">
+          <div class="two">
+            <label>Drone width (m)<input type="number" id="size" step="0.05" value="0.35"></label>
+            <label>Camera view (°)<input type="number" id="hfov" step="1" value="60"></label>
+          </div>
+          <div class="hint">Range = drone width × 1000 ÷ mils. Only as good as these two numbers; set them for the real drone and camera.</div>
+        </div>
+      </div>
+      <div class="card"><span class="lbl">How to read it</span>
+        <div class="hint"><span style="color:var(--lock)">Teal brackets</span> = the tracker’s main target. White = other detections. <span style="color:var(--hostile)">Orange line</span> = where the target has been.<br><br><kbd>Space</kbd> pause · <kbd>[</kbd> <kbd>]</kbd> change video · <kbd>R</kbd> restart</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="side">
+    <div class="card"><span class="lbl">Target</span>
+      <div class="big">
+        <div class="m"><div class="lbl">Confidence</div><div class="v" id="conf2">—</div></div>
+        <div class="m"><div class="lbl">Range (mil)</div><div class="v" id="range">—</div></div>
+        <div class="m"><div class="lbl">Track ID</div><div class="v" id="tid">—</div></div>
+        <div class="m"><div class="lbl">Tracker FPS</div><div class="v" id="fps">—</div></div>
+      </div>
+    </div>
+    <div class="card"><span class="lbl">Confidence, last 5 s</span><canvas id="spark" height="70"></canvas></div>
+    <div class="card"><span class="lbl">Target path</span><canvas id="path" height="150"></canvas></div>
+    <div class="card"><span class="lbl">This session</span>
+      <div class="rows">
+        <span>Time with a box</span><span id="lockedPct">—</span>
+        <span>Current lock</span><span id="curLock">—</span>
+        <span>Longest lock</span><span id="longLock">—</span>
+        <span>Reacquisitions</span><span id="reacq">—</span>
+        <span>Frames</span><span id="frames">—</span>
+        <span>Boxes in view</span><span id="ntgt">—</span>
+        <span>Running on</span><span id="dev">—</span>
+      </div>
+    </div>
+  </div>
+</div>
+</section>
+
+<!-- ============ DATA POOL ============ -->
+<section id="tab-pool" hidden>
+  <h2>Data pool</h2>
+  <p class="sub">Everything the model learns from and is tested on. None of it is our own footage yet; all of it is public.</p>
+  <div class="tiles" id="tiles"></div>
+
+  <h2>Photos</h2>
+  <p class="sub">Teal brackets mark the drone the model is told to find. Bird and kite photos have no brackets on purpose: they teach the model “nothing here is a drone.”</p>
+  <div class="chips" id="chips"></div>
+  <div class="note" id="imgNote"></div>
+  <div class="imgs" id="imgs"></div>
+  <div class="more"><button class="btn" id="moreBtn">Show more</button><span id="moreInfo"></span></div>
+
+  <h2>Videos</h2>
+  <p class="sub">Videos are for testing and demos only; the model never trains on them. Each card shows how the model scored on that video.</p>
+  <div id="vids"></div>
+</section>
+
+<!-- ============ RESULTS ============ -->
+<section id="tab-results" hidden>
+  <h2>Results: before and after bird/kite training</h2>
+  <p class="sub"><b>v1</b> trained on drone photos only. <b>v2</b> is the same model trained further with 2,100 bird and kite photos marked “no drone.” Both tested the same way at 960 px.</p>
+  <div class="note" id="resNote" hidden></div>
+  <div class="card tablewrap"><table id="resTable"></table></div>
+  <h2>False alarms by clip</h2>
+  <p class="sub">Share of frames with a false “drone” box in each no-drone video, at the default 0.35 cutoff. Shorter is better.</p>
+  <div class="legend"><span><i style="background:#5d6f8f"></i>v1 · drones only</span><span><i style="background:var(--lock)"></i>v2 · with bird/kite negatives</span></div>
+  <div class="card"><div class="bars" id="bars"></div></div>
+</section>
+</div>
+
+<dialog id="box"><img id="boxImg" alt=""><div class="cap"><span id="boxCap"></span><button class="btn" id="boxClose">Close</button></div></dialog>
+
+<script>
+const $=id=>document.getElementById(id);
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const set=(k,v)=>fetch(`/set?${k}=${encodeURIComponent(v)}`);
+const nice=s=>s.replace('footage/dut/','').replace('footage/negatives/','').replace('footage/','').replace('camera:','Camera ');
+let paused=false, sources=[], models=[], tab='live';
+
+/* ---------- tabs ---------- */
+function show(t){tab=t;
+  document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.tab===t));
+  ['live','pool','results'].forEach(x=>$('tab-'+x).hidden=x!==t);
+  $('video').src=t==='live'?'/stream.mjpg?'+Date.now():'';   // stop the stream (and the GPU work) when not watching
+  $('status').style.visibility=t==='live'?'visible':'hidden';
+  if(t==='pool')loadPool(); if(t==='results')loadResults();
+  history.replaceState(null,'','#'+t)}
+document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>show(b.dataset.tab));
+
+/* ---------- live ---------- */
+fetch('/sources').then(r=>r.json()).then(d=>{
+  sources=d.sources; models=d.models;
+  const groups=[['Tracking test videos (DUT)',s=>s.includes('/dut/')],['Demo clips',s=>s.startsWith('footage/')&&!s.includes('/dut/')&&!s.includes('/negatives/')],['No drone: birds and kites',s=>s.includes('/negatives/')],['Live cameras',s=>s.startsWith('camera:')]];
+  $('source').innerHTML=groups.map(([g,f])=>`<optgroup label="${g}">${sources.filter(f).map(s=>`<option value="${esc(s)}">${esc(nice(s))}</option>`).join('')}</optgroup>`).join('');
+  $('model').innerHTML=models.map(m=>`<option value="${m.id}" ${m.ok?'':'disabled'}>${esc(m.label)}${m.ok?'':' (not trained yet)'}</option>`).join('');
+});
+$('source').onchange=e=>set('source',e.target.value);
+$('model').onchange=e=>set('model',e.target.value);
+$('conf').oninput=e=>{$('confV').textContent=(+e.target.value).toFixed(2);set('conf',e.target.value)};
+$('imgsz').onchange=e=>set('imgsz',e.target.value);
+$('size').onchange=e=>set('size_m',e.target.value);
+$('hfov').onchange=e=>set('hfov',e.target.value);
+function togglePause(){paused=!paused;$('pause').textContent=paused?'Resume':'Pause';set('paused',paused)}
+function step(d){const files=sources.filter(s=>!s.startsWith('camera:'));if(!files.length)return;let i=files.indexOf($('source').value);i=(i+d+files.length)%files.length;$('source').value=files[i];set('source',files[i])}
+$('pause').onclick=togglePause; $('prev').onclick=()=>step(-1); $('next').onclick=()=>step(1); $('restart').onclick=()=>set('restart',1);
+addEventListener('keydown',e=>{if(tab!=='live'||/INPUT|SELECT|TEXTAREA/.test(e.target.tagName)||e.metaKey||e.ctrlKey)return;
+  if(e.key===' '){e.preventDefault();togglePause()}else if(e.key==='['){step(-1)}else if(e.key===']'){step(1)}else if(e.key==='r'||e.key==='R'){set('restart',1)}});
+
+function sizeCanvas(c){const r=c.getBoundingClientRect(),dpr=devicePixelRatio||1;if(c.width!==Math.round(r.width*dpr)){c.width=Math.round(r.width*dpr);c.height=Math.round(+c.getAttribute('height')*dpr)}return dpr}
+function drawSpark(h){const c=$('spark'),dpr=sizeCanvas(c),g=c.getContext('2d'),W=c.width,H=c.height;g.clearRect(0,0,W,H);
+  g.strokeStyle='#22324d';g.lineWidth=1;[0.25,0.5,0.75].forEach(y=>{g.beginPath();g.moveTo(0,H*y);g.lineTo(W,H*y);g.stroke()});
+  if(!h.length)return;const st=W/149;g.beginPath();h.forEach((v,i)=>{const x=(150-h.length+i)*st,y=H-v*H;i?g.lineTo(x,y):g.moveTo(x,y)});
+  g.strokeStyle='#3fe0c5';g.lineWidth=2*dpr;g.stroke();g.lineTo(W,H);g.lineTo((150-h.length)*st,H);g.fillStyle='rgba(63,224,197,.12)';g.fill()}
+function drawPath(t){const c=$('path'),dpr=sizeCanvas(c),g=c.getContext('2d'),W=c.width,H=c.height;g.clearRect(0,0,W,H);
+  g.strokeStyle='#22324d';g.lineWidth=1;for(let i=1;i<4;i++){g.beginPath();g.moveTo(W*i/4,0);g.lineTo(W*i/4,H);g.stroke();g.beginPath();g.moveTo(0,H*i/4);g.lineTo(W,H*i/4);g.stroke()}
+  if(!t.length)return;g.lineWidth=2*dpr;for(let i=1;i<t.length;i++){g.strokeStyle=`rgba(255,107,61,${i/t.length})`;g.beginPath();g.moveTo(t[i-1][0]*W,t[i-1][1]*H);g.lineTo(t[i][0]*W,t[i][1]*H);g.stroke()}
+  const p=t[t.length-1];g.fillStyle='#ff6b3d';g.beginPath();g.arc(p[0]*W,p[1]*H,5*dpr,0,7);g.fill()}
+const mmss=s=>Math.floor(s/60)+':'+String(Math.floor(s%60)).padStart(2,'0');
+async function tick(){
+  if(tab==='live'){
+  try{const s=await (await fetch('/stats')).json();
+    if(s.settings){const st=$('status'),known=['LOCKED','COASTING','SEARCHING'].includes(s.status);
+      st.className='status '+(known?s.status:'');$('statusText').textContent=s.status==='LOCKED'?'TARGET LOCKED':(s.settings.paused?'PAUSED':s.status==='IDLE'?'STARTING':s.status);
+      $('dev').textContent=s.device==='mps'?'Apple GPU':(s.device||'').toUpperCase();
+      $('srcLabel').textContent=nice(s.settings.source);
+      if(document.activeElement!==$('source')&&$('source').value!==s.settings.source)$('source').value=s.settings.source;
+      if(document.activeElement!==$('model')&&$('model').value!==s.settings.model)$('model').value=s.settings.model;
+      if(s.total){$('prog').style.width=(100*s.pos/s.total)+'%';$('time').textContent=mmss(s.pos/s.source_fps)+' / '+mmss(s.total/s.source_fps)}else{$('prog').style.width='0';$('time').textContent='live'}
+      const p=s.primary;
+      $('conf2').innerHTML=p?Math.round(p.conf*100)+'<small>%</small>':'—';
+      $('range').innerHTML=p&&p.range_m?Math.round(p.range_m)+'<small>m</small>':'—';
+      $('tid').textContent=p&&p.id!=null?p.id:'—';
+      $('fps').textContent=s.fps.toFixed(0);
+      $('lockedPct').textContent=s.locked_pct.toFixed(1)+'%';
+      $('curLock').textContent=s.current_lock_s.toFixed(1)+' s';
+      $('longLock').textContent=s.longest_lock_s.toFixed(1)+' s';
+      $('reacq').textContent=s.reacquisitions;$('frames').textContent=s.frames;$('ntgt').textContent=s.targets.length;
+      drawSpark(s.conf_hist);drawPath(s.trail);}
+  }catch(e){$('statusText').textContent='SERVER OFFLINE';$('status').className='status SEARCHING'}}
+  setTimeout(tick,150)}
+
+/* ---------- data pool ---------- */
+const FILTERS=[
+  {id:'train',label:'Training: drones',split:'train',note:'<b>Source:</b> DUT Anti-UAV detection set (Dalian University of Technology). The model learns from these. Every drone is hand-marked.'},
+  {id:'bird',label:'Training: birds',split:'train_neg',kind:'bird',note:'<b>Source:</b> COCO photo set. Photos with birds and <b>no drone</b>, picked so most birds are small and distant. Added so the model stops calling birds drones.'},
+  {id:'kite',label:'Training: kites',split:'train_neg',kind:'kite',note:'<b>Source:</b> COCO photo set. Photos with kites and <b>no drone</b>. Added so the model stops calling kites drones.'},
+  {id:'val',label:'Validation: drones',split:'val',note:'<b>Source:</b> DUT Anti-UAV. Not trained on. Checked after every training pass to pick the best version of the model.'},
+  {id:'val_neg',label:'Validation: birds/kites',split:'val_neg',note:'<b>Source:</b> COCO. Bird and kite photos held out of training, checked after every pass.'},
+  {id:'test',label:'Test: drones',split:'test',note:'<b>Source:</b> DUT Anti-UAV. Never used during training. This is where the 96% precision / 91% recall numbers come from.'}];
+let pool=null, flt=FILTERS[0], page=0, shown=0;
+const fmt=n=>n.toLocaleString();
+function count(f){const s=pool.splits[f.split];return f.kind?(s.kinds[f.kind]||0):s.images}
+async function loadPool(){
+  const d=await (await fetch('/api/pool')).json();
+  if(!d.ready){$('tiles').innerHTML='<div class="card tile"><div class="d">Counting images…</div></div>';setTimeout(()=>tab==='pool'&&loadPool(),1000);return}
+  const first=!pool; pool=d; const s=d.splits, v=d.videos;
+  const drones=s.train.images+s.val.images+s.test.images, neg=s.train_neg.images+s.val_neg.images;
+  const g=k=>v.filter(x=>x.group===k);
+  $('tiles').innerHTML=[
+    [fmt(drones),'drone photos with '+fmt(s.train.boxes+s.val.boxes+s.test.boxes)+' hand-marked drones'],
+    [fmt(neg),'bird and kite photos with no drone ('+fmt((s.train_neg.kinds.bird||0)+(s.val_neg.kinds.bird||0))+' bird, '+fmt((s.train_neg.kinds.kite||0)+(s.val_neg.kinds.kite||0))+' kite)'],
+    [fmt(s.train.images+s.train_neg.images),'photos the model trains on; the rest are held back to check it'],
+    [g('dut').length,'tracking test videos with the drone marked in every frame'],
+    [g('negatives').length,'bird and kite videos with no drone, for the false-alarm test'],
+    [g('').length,'demo clips of real drone flights']
+  ].map(([n,t])=>`<div class="card tile"><div class="n">${n}</div><div class="d">${t}</div></div>`).join('');
+  $('chips').innerHTML=FILTERS.map(f=>`<button class="chip ${f===flt?'on':''}" data-f="${f.id}">${f.label}<span>${fmt(count(f))}</span></button>`).join('');
+  $('chips').querySelectorAll('button').forEach(b=>b.onclick=()=>{flt=FILTERS.find(f=>f.id===b.dataset.f);$('chips').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b));loadImgs(true)});
+  renderVids(); if(first)loadImgs(true)}
+async function loadImgs(reset){
+  if(reset){page=0;shown=0;$('imgs').innerHTML='';$('imgNote').innerHTML=flt.note}
+  const f=flt, q=`split=${f.split}&page=${page}&per=48`+(f.kind?`&kind=${f.kind}`:'');
+  const d=await (await fetch('/api/images?'+q)).json();
+  if(f!==flt)return;
+  const neg=f.split.endsWith('_neg');
+  $('imgs').insertAdjacentHTML('beforeend',d.items.map(i=>{const u=`/thumb?kind=img&split=${f.split}&name=${encodeURIComponent(i.name)}`;
+    return `<button class="th" data-u="${u}" data-c="${esc(i.name)} · ${neg?'no drone (background)':i.boxes+' drone'+(i.boxes===1?'':'s')+' marked'}"><img loading="lazy" src="${u}&w=360" alt=""><span class="${neg?'neg':'pos'}">${neg?'no drone':i.boxes+' drone'+(i.boxes===1?'':'s')}</span></button>`}).join(''));
+  shown+=d.items.length;$('moreInfo').textContent=`showing ${fmt(shown)} of ${fmt(d.total)} (random order)`;$('moreBtn').hidden=shown>=d.total}
+$('moreBtn').onclick=()=>{page++;loadImgs(false)};
+$('imgs').onclick=e=>{const b=e.target.closest('.th');if(!b)return;$('boxImg').src=b.dataset.u+'&w=1200';$('boxCap').textContent=b.dataset.c;$('box').showModal()};
+$('boxClose').onclick=()=>$('box').close(); $('box').onclick=e=>{if(e.target===$('box'))$('box').close()};
+const cls=(v,good,ok,low)=>low?(v<=good?'g':v<=ok?'y':'r'):(v>=good?'g':v>=ok?'y':'r');
+function resLine(v){const r=v.results||{},out=[];
+  if(v.group==='dut'){for(const m of ['v1','v2'])if(r[m])out.push(`${m}: on target <b class="${cls(r[m].on_target_pct,90,75)}">${r[m].on_target_pct}%</b>, ${r[m].id_switches} ID switch${r[m].id_switches===1?'':'es'}`)}
+  else if(v.group==='negatives'){for(const m of ['v1','v2'])if(r[m])out.push(`${m}: false alarms in <b class="${cls(r[m].fa35,5,20,true)}">${r[m].fa35}%</b> of frames`)}
+  return out.length?out.join('<br>'):(v.note?esc(v.note):'Not scored (no ground truth)')}
+function renderVids(){
+  const info={dut:['Tracking test videos','DUT Anti-UAV tracking set. The true drone position is marked in every frame, so we can score the tracker.'],negatives:['No-drone videos','Wikimedia Commons. Birds and kites only. Any box here is a false alarm. Never used for training.'],'':['Demo clips','Wikimedia Commons (U.S. Army, Bureau of Land Management, makers fair). Real flights, no ground truth.']};
+  $('vids').innerHTML=['dut','negatives',''].map(k=>{const vs=pool.videos.filter(v=>v.group===k);if(!vs.length)return '';
+    return `<div class="gh"><h3>${info[k][0]}</h3><span>${vs.length} videos · ${info[k][1]}</span></div><div class="vids">`+vs.map(v=>`<div class="vid"><div class="pic"><img loading="lazy" src="/thumb?kind=vid&path=${encodeURIComponent(v.path)}&w=480" alt="">${v.seconds?`<span>${mmss(v.seconds)}</span>`:''}</div><div class="body"><div class="t">${esc(v.name)}</div><div class="meta">${v.w}×${v.h} · ${v.fps} fps</div><div class="res">${resLine(v)}</div><button class="btn pri" data-p="${esc(v.path)}">Track this ▶</button></div></div>`).join('')+'</div>'}).join('');
+  $('vids').querySelectorAll('button[data-p]').forEach(b=>b.onclick=()=>{set('source',b.dataset.p).then(()=>{if(paused)togglePause();show('live');scrollTo(0,0)})})}
+
+/* ---------- results ---------- */
+async function loadResults(){
+  const d=await (await fetch('/api/results')).json(), a=d.v1||{}, b=d.v2||{};
+  const pct=x=>x==null?null:(+x).toFixed(1)+'%';
+  const cell=(m,f)=>{try{const v=f(m);return v==null||(typeof v==='number'&&Number.isNaN(v))?'—':v}catch(e){return '—'}};
+  const delta=(f,lowGood,unit)=>{try{const x=f(a),y=f(b);if(x==null||y==null||Number.isNaN(x)||Number.isNaN(y))return '';const dl=y-x;if(Math.abs(dl)<0.005)return '<span style="color:var(--muted)">no change</span>';const good=lowGood?dl<0:dl>0;return `<span class="${good?'g':'r'}">${dl>0?'+':''}${+dl.toFixed(2)}${unit}</span>`}catch(e){return ''}};
+  const row=(name,sub,f,fmtv,lowGood,unit)=>`<tr><td>${name}<small>${sub}</small></td><td class="num">${cell(a,m=>fmtv(f(m)))}</td><td class="num">${cell(b,m=>fmtv(f(m)))}</td><td class="num">${delta(f,lowGood,unit)}</td></tr>`;
+  const n=x=>x==null?null:String(x);
+  $('resTable').innerHTML=`<tr><th>Metric</th><th class="num">v1 · drones only</th><th class="num">v2 · + birds/kites</th><th class="num">Change</th></tr>
+  <tr class="grp"><td colspan="4">TEST 1 · FALSE ALARMS ON 8 BIRD/KITE VIDEOS (NO DRONES PRESENT) · LOWER IS BETTER</td></tr>
+  ${row('Frames with a false “drone” box','cutoff 0.25',m=>m.test1['false_alarm_pct@0.25'],pct,true,' pts')}
+  ${row('Frames with a false “drone” box','cutoff 0.35 (default)',m=>m.test1['false_alarm_pct@0.35'],pct,true,' pts')}
+  ${row('Frames with a false “drone” box','cutoff 0.50',m=>m.test1['false_alarm_pct@0.5'],pct,true,' pts')}
+  <tr class="grp"><td colspan="4">TEST 2 · TRACKING ON 20 DRONE VIDEOS (24,804 FRAMES)</td></tr>
+  ${row('On target','our box overlaps the real drone',m=>m.test2.on_target_pct,pct,false,' pts')}
+  ${row('Time to reacquire','average, after losing the drone',m=>m.test2.avg_reacquire_s,x=>x==null?null:x+' s',true,' s')}
+  ${row('Frames with a wrong-object box','box drawn, but not on the drone',m=>m.test2.false_alarm_pct,pct,true,' pts')}
+  ${row('Track ID switches','same drone given a new ID',m=>m.test2.id_switches,n,true,'')}
+  <tr class="grp"><td colspan="4">VALIDATION PHOTOS DURING TRAINING (v2’S SET ALSO INCLUDES 300 BIRD/KITE PHOTOS)</td></tr>
+  ${row('Precision','when it says drone, how often it’s right',m=>m.train.precision*100,pct,false,' pts')}
+  ${row('Recall','share of real drones it finds',m=>m.train.recall*100,pct,false,' pts')}
+  ${row('mAP50','overall detection score',m=>m.train.map50*100,pct,false,' pts')}`;
+  const note=$('resNote'),t=b.train;
+  if(!b.test1||!b.test2){note.hidden=false;note.innerHTML=t?`<b>v2 is still training or being tested:</b> ${t.epochs_done} of ${t.epochs_planned||'?'} training passes done. Test 1 and Test 2 run when it finishes; this page updates itself.`:'<b>v2 training has just started.</b> This page updates itself.';setTimeout(()=>tab==='results'&&loadResults(),20000)}else note.hidden=true;
+  const clips=(a.test1_clips||[]).map(c=>({clip:c.clip,v1:c['false_alarm_pct@0.35'],v2:((b.test1_clips||[]).find(x=>x.clip===c.clip)||{})['false_alarm_pct@0.35']})).sort((x,y)=>y.v1-x.v1);
+  const max=Math.max(1,...clips.map(c=>Math.max(c.v1,c.v2||0)));
+  $('bars').innerHTML=clips.map(c=>`<div>${esc(c.clip.replace(/\.\w+$/,''))}</div><div class="pair"><div class="b v1"><i style="width:${70*c.v1/max}%"></i>${c.v1}%</div>${c.v2==null?'':`<div class="b v2"><i style="width:${70*c.v2/max}%"></i>${c.v2}%</div>`}</div>`).join('')}
+
+show(['live','pool','results'].includes(location.hash.slice(1))?location.hash.slice(1):'live'); tick();
+</script>
+</body>
+</html>

@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Drone Hide and Seek · Clip Review</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+  <div class="brand">CENTCOM-4 <span>· Drone Hide and Seek</span></div>
+  <nav aria-label="Views">
+    <button data-tab="live">Live</button>
+    <button data-tab="review">Clip Review</button>
+    <button data-tab="results">Results</button>
+    <button data-tab="pool">Data Pool</button>
+    <button data-tab="collect">Collect</button>
+  </nav>
+  <div id="trainChip" aria-live="polite"></div>
+</header>
+<div class="wrap">
+
+<!-- ================= CLIP REVIEW ================= -->
+<section id="tab-review">
+<div class="review">
+  <div class="main">
+    <div class="clipbar">
+      <h1 id="cTitle">Loading…</h1>
+      <span id="cTags"></span>
+      <span class="showing" id="cShowing"></span>
+    </div>
+    <div class="player" id="player">
+      <video id="vid" playsinline muted preload="auto"></video>
+      <canvas id="ovl"></canvas>
+      <div class="vpill" id="vPill" hidden></div>
+    </div>
+    <canvas id="confGraph" height="44" aria-label="Model confidence across the whole clip"></canvas>
+    <canvas id="timeline" height="30" aria-label="Frame-by-frame result timeline. Click to seek."></canvas>
+    <input type="range" id="scrub" min="0" max="0" value="0" step="1" aria-label="Scrub through the clip by frame">
+    <div class="legend" id="legend"></div>
+    <div id="pMsg" hidden></div>
+    <div class="ctl">
+      <button class="btn on" id="bPlay" title="Space">▶ Play</button>
+      <button class="btn" id="bPrevF" title="Left arrow or comma">◀ Frame</button>
+      <button class="btn" id="bNextF" title="Right arrow or period">Frame ▶</button>
+      <button class="btn" id="bRestart" title="R">Restart</button>
+      <button class="btn" id="bWorst" title="W">Jump to worst moment</button>
+      <label>Speed <select id="speed"><option value="0.25">0.25×</option><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option></select></label>
+      <span class="read" id="read">—</span>
+    </div>
+    <div class="ctl">
+      <span class="muted" style="font-size:12.5px">Model output</span>
+      <div class="outs" id="outs" role="group" aria-label="Model output"></div>
+      <span class="sep"></span>
+      <button class="btn" id="bTruth" aria-pressed="true" title="G">Truth box: on</button>
+      <span class="sep"></span>
+      <button class="btn" id="bFlagM" title="M">⚑ Flag miss</button>
+      <button class="btn" id="bFlagF" title="F">⚑ Flag false alarm</button>
+      <button class="btn" id="bUndo" title="U: remove the most recent flag" disabled>↶ Undo flag</button>
+      <span id="undoMsg" class="mono" role="status" aria-live="polite" style="font-size:12.5px"></span>
+    </div>
+    <details class="ver"><summary>What do v1, v2, v3 and “+ hold” mean?</summary><div class="verBody"></div></details>
+    <div id="fInfo" aria-live="off"></div>
+    <div id="cSummary"></div>
+    <div class="keys"><kbd>Space</kbd> play/pause · <kbd>←</kbd> <kbd>→</kbd> or <kbd>,</kbd> <kbd>.</kbd> step one frame · <kbd>[</kbd> <kbd>]</kbd> previous/next clip · <kbd>R</kbd> restart · <kbd>W</kbd> worst moment · <kbd>1</kbd>–<kbd>5</kbd> model output · <kbd>G</kbd> truth box · <kbd>M</kbd> flag miss · <kbd>F</kbd> flag false alarm · <kbd>U</kbd> undo last flag</div>
+  </div>
+  <aside class="clips" aria-label="Clips">
+    <h3>This frame</h3>
+    <div class="tele" id="rvTele" aria-label="Readout for the current frame">
+      <div><span class="k">Confidence</span><span class="v" id="tConf">—</span></div>
+      <div><span class="k">Range (mil)</span><span class="v" id="tRange">—</span></div>
+      <div><span class="k">Track ID</span><span class="v" id="tId">—</span></div>
+      <div><span class="k" id="tLockK">Box on screen so far</span><span class="v" id="tLock">—</span></div>
+      <div class="set"><label>Drone width (m)<input type="number" id="tSize" step="0.05" value="0.35"></label><label>Camera view (°)<input type="number" id="tFov" step="1" value="60"></label></div>
+    </div>
+    <h3>Demo clips</h3>
+    <div id="demoList"></div>
+    <h3>All clips</h3>
+    <select id="groupSel" aria-label="Filter clips by type"></select>
+    <div id="clipList"></div>
+  </aside>
+</div>
+</section>
+
+<!-- ================= LIVE ================= -->
+<section id="tab-live" hidden>
+<div class="review">
+  <div class="main">
+    <div class="clipbar"><h1 id="lvTitle">Live</h1><span class="tag">model runs on every frame as it plays</span><span class="showing" id="lvStatus">—</span></div>
+    <div class="player" id="lvPlayer" style="aspect-ratio:16/9;max-width:calc(60vh * 1.7778)"><img id="lvImg" alt="Live video with the model's boxes" style="width:100%;height:100%;object-fit:contain;display:block"></div>
+    <div class="prog"><i id="lvProg"></i></div>
+    <div class="ctl">
+      <button class="btn" id="lvPrev" title="[">◀ Prev</button>
+      <select id="lvSource" aria-label="Video or camera" style="flex:1;min-width:180px"></select>
+      <button class="btn" id="lvNext" title="]">Next ▶</button>
+      <button class="btn on" id="lvPause" title="Space">❚❚ Pause</button>
+      <button class="btn" id="lvRestart" title="R">Restart</button>
+      <span class="read" id="lvTime" style="min-width:90px">—</span>
+    </div>
+    <div class="tele">
+      <div><span class="k">Model</span><select id="lvModel"></select></div>
+      <div style="flex:2 1 220px"><span class="k">Confidence cutoff · <b id="lvConfV">0.35</b></span><input type="range" id="lvConf" min="0.05" max="0.9" step="0.05" value="0.35" style="accent-color:var(--accent)"></div>
+      <div><span class="k">Tracker</span><select id="lvTracker"><option value="default">Default</option><option value="hold">Hold (keeps a locked drone)</option></select></div>
+      <div><span class="k">Image size</span><select id="lvImgsz"><option value="640">640 px (fastest)</option><option value="960" selected>960 px</option><option value="1280">1280 px (small targets)</option></select></div>
+      <div class="set"><label>Drone width (m)<input type="number" id="lvSize" step="0.05" value="0.35"></label><label>Camera view (°)<input type="number" id="lvFov" step="1" value="60"></label></div>
+    </div>
+    <details class="ver"><summary>What do v1, v2, v3 and “+ hold” mean?</summary><div class="verBody"></div></details>
+    <div class="keys" id="lvNote"><kbd>Space</kbd> pause · <kbd>[</kbd> <kbd>]</kbd> change video · <kbd>R</kbd> restart. Teal brackets = main target, orange line = its path. Move the cutoff slider and watch boxes appear and drop.</div>
+  </div>
+  <aside class="clips">
+    <h3>Target</h3>
+    <div class="tele" style="margin-top:0"><div><span class="k">Confidence</span><span class="v" id="lvC">—</span></div><div><span class="k">Range (mil)</span><span class="v" id="lvR">—</span></div><div><span class="k">Track ID</span><span class="v" id="lvId">—</span></div><div><span class="k">Tracker FPS</span><span class="v" id="lvFps">—</span></div></div>
+    <h3>Confidence, last 5 s</h3>
+    <canvas id="lvSpark" height="64" style="width:100%;display:block;border:1px solid var(--line)"></canvas>
+    <h3>Target path</h3>
+    <canvas id="lvPath" height="140" style="width:100%;display:block;border:1px solid var(--line)"></canvas>
+    <h3>This session</h3>
+    <table><tr><td>Time with a box</td><td class="num" id="lvLocked">—</td></tr><tr><td>Current lock</td><td class="num" id="lvCur">—</td></tr><tr><td>Longest lock</td><td class="num" id="lvLong">—</td></tr><tr><td>Reacquisitions</td><td class="num" id="lvReacq">—</td></tr><tr><td>Boxes in view</td><td class="num" id="lvN">—</td></tr></table>
+  </aside>
+</div>
+</section>
+
+<!-- ================= RESULTS ================= -->
+<section id="tab-results" hidden><div id="results"></div></section>
+
+<!-- ================= DATA POOL ================= -->
+<section id="tab-pool" hidden>
+  <h2>Data Pool</h2>
+  <div class="statline" id="poolStats"></div>
+  <h2>Photos</h2>
+  <div class="filters" id="splitChips"></div>
+  <div class="filters">
+    <label>Drone size <select id="sizeSel"></select></label>
+    <label>Model boxes <select id="predSel"></select></label>
+    <label>Show <select id="resSel"><option value="">all photos</option><option value="missed">missed drones only</option><option value="false_alarm">false alarms only</option></select></label>
+  </div>
+  <div class="note" id="imgNote"></div>
+  <div class="imgs" id="imgs"></div>
+  <div class="more"><button class="btn" id="moreBtn">Show more</button><span id="moreInfo"></span></div>
+  <h2>Videos</h2>
+  <p class="cap">Clips are for testing and demos. The split tag says whether v3 trained on frames from a clip (verified from the training folder) or it is held out.</p>
+  <div id="vids"></div>
+</section>
+
+<!-- ================= COLLECT ================= -->
+<section id="tab-collect" hidden>
+  <div class="cols">
+    <div>
+      <h2>Live camera</h2>
+      <p class="cap">Record our own footage. Clips are saved to <span class="mono">footage/ours/</span> with the details below, then appear in Clip Review and in the labeler.</p>
+      <div class="cam" id="camBox">Camera is off.</div>
+      <div class="ctl">
+        <label>Camera <select id="camIdx"><option value="0">0 (built-in)</option><option value="1">1</option><option value="2">2</option></select></label>
+        <button class="btn" id="camToggle">Start preview</button>
+        <button class="btn" id="camOverlay" aria-pressed="false">Model boxes: off</button>
+        <button class="btn rec" id="camRec">● Record</button>
+      </div>
+      <div class="form">
+        <label>Location<input type="text" id="mLoc" placeholder="e.g. Mudd rooftop"></label>
+        <label>Drone type<input type="text" id="mDrone" placeholder="e.g. DJI Mini 4"></label>
+        <label>Background<select id="mBg"><option value="">not set</option><option>open sky</option><option>trees</option><option>buildings</option><option>mixed</option><option>other</option></select></label>
+        <label>Notes<input type="text" id="mNotes"></label>
+      </div>
+      <div id="camStatus" class="mono muted" style="margin-top:8px" aria-live="polite"></div>
+
+      <h2>Hard examples</h2>
+      <p class="cap">Frames flagged in Clip Review with <kbd>M</kbd> or <kbd>F</kbd>. Export copies them to <span class="mono">our_data/hard_examples/</span>; nothing is added to a training set automatically.</p>
+      <div class="ctl"><button class="btn" id="flagExport">Export for retraining</button><span id="flagMsg" class="mono muted"></span></div>
+      <div id="flagList"></div>
+
+      <h2>Coverage</h2>
+      <p class="cap">What footage we have. Background is only filled in for our own recordings; it is not guessed for public clips.</p>
+      <div class="tw"><table id="covTable"></table></div>
+    </div>
+    <div>
+      <h2>Label a clip</h2>
+      <p class="cap">The model proposes a box; accept it, redraw it by dragging on the picture, or mark the frame as no drone. Labels are saved in YOLO format under <span class="mono">our_data/labels/</span>, separate from the existing training folders.</p>
+      <div class="ctl">
+        <label>Clip <select id="labClip"></select></label>
+        <label>Step <select id="labStride"><option value="1">1 frame</option><option value="5" selected>5 frames</option><option value="15">15 frames</option><option value="30">30 frames</option></select></label>
+        <span class="read" id="labRead"></span>
+      </div>
+      <div class="lab" id="labBox"><video id="labVid" playsinline muted preload="auto"></video><canvas id="labCv"></canvas></div>
+      <div class="ctl">
+        <button class="btn" id="labPrev" title="A">◀ Back</button>
+        <button class="btn" id="labNext" title="D">Next ▶</button>
+        <button class="btn" id="labPropose" title="P">Propose box</button>
+        <button class="btn on" id="labSave" title="S or Enter">Save label</button>
+        <button class="btn" id="labNone" title="N">No drone</button>
+        <button class="btn" id="labClear" title="X">Clear boxes</button>
+        <button class="btn" id="labDelete">Delete saved label</button>
+      </div>
+      <div id="labStatus" class="mono" style="margin-top:8px;min-height:20px" aria-live="polite"></div>
+      <div class="keys"><kbd>A</kbd> <kbd>D</kbd> back/next · <kbd>P</kbd> propose · <kbd>S</kbd> or <kbd>Enter</kbd> save · <kbd>N</kbd> no drone · <kbd>X</kbd> clear · drag on the picture to draw a box</div>
+    </div>
+  </div>
+</section>
+</div>
+
+<dialog id="box"><img id="boxImg" alt=""><div class="dc"><span id="boxCap"></span><button class="btn" id="boxClose">Close</button></div></dialog>
+<div id="toast" role="status" hidden></div>
+<script src="/static/review.js"></script>
+<script src="/static/results.js"></script>
+<script src="/static/pool.js"></script>
+<script src="/static/collect.js"></script>
+<script src="/static/live.js"></script>
+<script>boot();</script>
+</body>
+</html>

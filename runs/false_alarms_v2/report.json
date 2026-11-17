@@ -1,0 +1,68 @@
+{
+  "model": "runs/train/dut_neg_n960/weights/best.pt",
+  "imgsz": 960,
+  "clips": [
+    {
+      "clip": "cranes_flock.webm",
+      "frames_tested": 204,
+      "false_alarm_pct@0.25": 2.9,
+      "false_alarm_pct@0.35": 2.9,
+      "false_alarm_pct@0.5": 1.5
+    },
+    {
+      "clip": "flock_padilla_bay.webm",
+      "frames_tested": 660,
+      "false_alarm_pct@0.25": 16.2,
+      "false_alarm_pct@0.35": 10.3,
+      "false_alarm_pct@0.5": 3.5
+    },
+    {
+      "clip": "flock_padilla_bay_2.webm",
+      "frames_tested": 315,
+      "false_alarm_pct@0.25": 4.4,
+      "false_alarm_pct@0.35": 2.9,
+      "false_alarm_pct@0.5": 0.6
+    },
+    {
+      "clip": "flock_sylt.ogv",
+      "frames_tested": 315,
+      "false_alarm_pct@0.25": 19.7,
+      "false_alarm_pct@0.35": 14.3,
+      "false_alarm_pct@0.5": 8.3
+    },
+    {
+      "clip": "kites.webm",
+      "frames_tested": 260,
+      "false_alarm_pct@0.25": 6.9,
+      "false_alarm_pct@0.35": 3.5,
+      "false_alarm_pct@0.5": 0.8
+    },
+    {
+      "clip": "pigeons_tokyo.webm",
+      "frames_tested": 223,
+      "false_alarm_pct@0.25": 13.5,
+      "false_alarm_pct@0.35": 10.8,
+      "false_alarm_pct@0.5": 6.7
+    },
+    {
+      "clip": "seagulls_close.webm",
+      "frames_tested": 442,
+      "false_alarm_pct@0.25": 0.2,
+      "false_alarm_pct@0.35": 0.0,
+      "false_alarm_pct@0.5": 0.0
+    },
+    {
+      "clip": "terns_midway.webm",
+      "frames_tested": 497,
+      "false_alarm_pct@0.25": 17.5,
+      "false_alarm_pct@0.35": 9.5,
+      "false_alarm_pct@0.5": 3.8
+    }
+  ],
+  "overall": {
+    "false_alarm_pct@0.25": 11.1,
+    "false_alarm_pct@0.35": 7.1,
+    "false_alarm_pct@0.5": 3.1,
+    "frames_tested": 2916
+  }
+}

@@ -1,0 +1,11 @@
+# ByteTrack tuned to HOLD a drone it is already tracking when the detector gets unsure
+# (e.g. the drone passes in front of trees). A NEW track still needs a confident detection
+# (0.35), so this does not add false alarms on its own. Use with a low detector cutoff:
+#   model.track(frame, conf=0.08, tracker="bytetrack_hold.yaml")
+tracker_type: bytetrack
+track_high_thresh: 0.35   # confident detections, matched first
+track_low_thresh: 0.08    # weak detections may only CONTINUE an existing track
+new_track_thresh: 0.35    # starting a track still needs confidence
+track_buffer: 60          # keep a lost track alive for 2 s (was 1 s) so the ID survives short gaps
+match_thresh: 0.8
+fuse_score: True

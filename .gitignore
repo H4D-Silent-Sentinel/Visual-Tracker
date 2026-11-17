@@ -1,0 +1,35 @@
+# Environment
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+
+# Data: too large for git, and the public datasets/clips have their own licenses.
+# Re-create with prepare_dut.py, prepare_negatives.py, prepare_tracking_split.py, make_web_clips.py.
+footage/
+our_data/
+bus.jpg
+
+# Stock YOLO weights download automatically (ultralytics)
+/yolo11*.pt
+
+# Run outputs: keep only small results, trained weights, and review files
+runs/*
+!runs/train/
+runs/train/*
+!runs/train/dut_n960/
+!runs/train/dut_neg_n960/
+!runs/train/dut_v3_n960/
+runs/train/*/*
+!runs/train/*/results.csv
+!runs/train/*/args.yaml
+!runs/train/*/weights/
+runs/train/*/weights/*
+!runs/train/*/weights/best.pt
+!runs/false_alarms*/
+runs/false_alarms*/*
+!runs/false_alarms*/report.json
+!runs/tracking_test*/
+runs/tracking_test*/*
+!runs/tracking_test*/report.json
+!runs/review/

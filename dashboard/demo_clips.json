@@ -1,0 +1,37 @@
+[
+ {
+  "clip": "dut__video17",
+  "category": "Trees / clutter",
+  "note": "At 0:12 the drone crosses in front of the treetops and v1, v2 and v3 all lose it for about half a second. Held out from all training.",
+  "frame": 350,
+  "verified": "Checked by eye on frame 370 with every model's boxes drawn: drone at the canopy edge, no model has it."
+ },
+ {
+  "clip": "dut__video10",
+  "category": "Trees (easy case)",
+  "note": "Drone over the tree line, large in frame. Every model holds it about 99% of the time. Good contrast with video17.",
+  "frame": 0,
+  "verified": "Longest v1 miss is 3 frames."
+ },
+ {
+  "clip": "dut__video03",
+  "category": "Open sky",
+  "note": "Small drone against clouds, nothing behind it. Held out from all training.",
+  "frame": 0,
+  "verified": "Content checked by eye."
+ },
+ {
+  "clip": "negatives__terns_midway",
+  "category": "Birds / kites",
+  "note": "Tern colony, no drone. Any box is a false alarm.",
+  "frame": null,
+  "verified": "No-drone clip; worst false-alarm clip for v1 in Test 1 (54.5% of frames)."
+ },
+ {
+  "clip": "negatives__kites",
+  "category": "Birds / kites",
+  "note": "Kites, no drone. Any box is a false alarm.",
+  "frame": null,
+  "verified": "No-drone clip; v1 boxed 51.2% of frames in Test 1."
+ }
+]

@@ -1,0 +1,29 @@
+{
+ "v1": {
+  "precision": 0.9618,
+  "recall": 0.9072,
+  "map50": 0.9508,
+  "map50_95": 0.644,
+  "images": 2200,
+  "split": "test",
+  "weights_mtime": 1794844673.579489
+ },
+ "v2": {
+  "precision": 0.9624,
+  "recall": 0.9122,
+  "map50": 0.9556,
+  "map50_95": 0.6413,
+  "images": 2200,
+  "split": "test",
+  "weights_mtime": 1794891747.0430286
+ },
+ "v3": {
+  "precision": 0.9557,
+  "recall": 0.9134,
+  "map50": 0.9493,
+  "map50_95": 0.6386,
+  "images": 2200,
+  "split": "test",
+  "weights_mtime": 1794897942.1721702
+ }
+}
