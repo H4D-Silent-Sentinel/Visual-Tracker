@@ -10,6 +10,7 @@ import urllib.request
 from urllib.parse import urlparse
 
 import cv2
+from candidate_labels import DRONE_LABEL, LABELS
 
 
 def crop_target(frame, box):
@@ -35,22 +36,15 @@ def crop_target(frame, box):
 
 
 def validate_verdict(d):
-    if not isinstance(d, dict) or type(d.get('is_drone')) is not bool or type(d.get('calibrated')) is not bool:
-        raise ValueError('Verifier must return a binary verdict and calibrated flag')
-    for key in ('confidence', 'p_drone'):
-        if type(d.get(key)) not in (int, float) or not math.isfinite(d[key]) or not 0 <= d[key] <= 1:
-            raise ValueError('Invalid verifier probability')
-    p = d['p_drone']
-    if (p != .5 and d['is_drone'] != (p >= .5)) or abs(d['confidence'] - (p if d['is_drone'] else 1-p)) > .001:
-        raise ValueError('Verifier probability and verdict disagree')
+    if not isinstance(d, dict) or type(d.get('is_drone')) is not bool or d.get('label') not in LABELS:
+        raise ValueError('Verifier must return a binary verdict and an allowed object label')
+    if d['is_drone'] != (d['label'] == DRONE_LABEL):
+        raise ValueError('Verifier label and binary verdict disagree')
     return d
 
 
 class DroneVerifier:
-    def __init__(self, threshold=.85, url=None, *, clock=time.monotonic, request=None):
-        if not .5 < threshold <= 1:
-            raise ValueError('Verification confidence must be greater than 0.5 and at most 1')
-        self.threshold = threshold
+    def __init__(self, url=None, *, clock=time.monotonic, request=None):
         self.url = url or os.environ.get('VLM_URL', 'http://127.0.0.1:8002/verify')
         parsed = urlparse(self.url)
         if parsed.scheme != 'http' or parsed.hostname not in ('127.0.0.1', 'localhost', '::1') or parsed.username or parsed.password:
@@ -92,7 +86,7 @@ class DroneVerifier:
                 continue
             try:
                 result = dict(validate_verdict(self.request(image)))
-                result['status'] = ('confirmed' if result['is_drone'] else 'rejected') if result['confidence'] >= self.threshold else 'uncertain'
+                result['status'] = 'confirmed' if result['is_drone'] else 'rejected'
             except Exception as e:
                 result = {'status': 'error', 'error': str(e)[:180]}
             with self.condition:

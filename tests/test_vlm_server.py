@@ -2,19 +2,20 @@ import base64
 import http.client
 import io
 import json
-import math
 import sys
 import threading
 import unittest
 from types import SimpleNamespace
+from pathlib import Path
 from unittest.mock import Mock, patch
 
 from PIL import Image
 
 from vlm_server import (
-    DEFAULT_MODEL, DEFAULT_REVISION, MAX_BODY_BYTES, CropScorer, MLXBackend,
-    VerificationServer, decode_crop, label_token_ids, prompt_identity,
+    CLASS_CODES, DEFAULT_MODEL, DEFAULT_REVISION, MAX_BODY_BYTES, PROMPT, CropScorer, MLXBackend,
+    VerificationServer, code_token_ids, decode_crop, prompt_identity, select_label,
 )
+from candidate_labels import LABELS
 
 
 def encoded_image(size=(48, 32), format="JPEG"):
@@ -24,8 +25,8 @@ def encoded_image(size=(48, 32), format="JPEG"):
     return base64.b64encode(stream.getvalue()).decode()
 
 
-def fake_backend(margin=3.0):
-    return SimpleNamespace(model_name="test-model", revision="test-revision", prompt_hash="test-prompt", margin=Mock(return_value=margin))
+def fake_backend(label="drone"):
+    return SimpleNamespace(model_name="test-model", revision="test-revision", prompt_hash="test-prompt", classify=Mock(return_value=label))
 
 
 class ScorerTests(unittest.TestCase):
@@ -35,7 +36,7 @@ class ScorerTests(unittest.TestCase):
         for value in (None, "", "not base64", "https://example.com/image.jpg", encoded_image(format="PNG"), encoded_image((385, 20))):
             with self.subTest(value=str(value)[:30]), self.assertRaises(ValueError):
                 scorer.verify(value)
-        backend.margin.assert_not_called()
+        backend.classify.assert_not_called()
 
     def test_valid_crop_stays_small_and_rgb(self):
         image = decode_crop(encoded_image((384, 100)))
@@ -43,43 +44,73 @@ class ScorerTests(unittest.TestCase):
         self.assertEqual(image.mode, "RGB")
         image.close()
 
-    def test_response_probability_and_metadata(self):
-        backend = fake_backend(-4.0)
-        result = CropScorer(backend).verify(encoded_image())
-        self.assertFalse(result["is_drone"])
-        self.assertAlmostEqual(result["p_drone"], 1 / (1 + math.exp(4)))
-        self.assertAlmostEqual(result["confidence"], 1 - result["p_drone"])
-        self.assertFalse(result["calibrated"])
-        self.assertEqual(result["prompt_hash"], "test-prompt")
-        self.assertEqual(result["model_revision"], "test-revision")
-        self.assertEqual(backend.margin.call_count, 1)
+    def test_all_categories_map_to_binary_without_confidence_fields(self):
+        for label in LABELS:
+            with self.subTest(label=label):
+                backend = fake_backend(label)
+                result = CropScorer(backend).verify(encoded_image())
+                self.assertIs(result["is_drone"], label == "drone")
+                self.assertEqual(result["label"], label)
+                self.assertEqual(set(result), {"is_drone", "label", "model", "prompt_hash", "model_revision"})
+                self.assertEqual(result["prompt_hash"], "test-prompt")
+                self.assertEqual(result["model_revision"], "test-revision")
+                backend.classify.assert_called_once()
 
-    def test_calibration_identity_is_checked(self):
-        calibration = dict(model="another-model", prompt_hash="test-prompt", temperature=1, bias=0)
-        with self.assertRaises(ValueError):
-            CropScorer(fake_backend(), calibration)
-        calibration["model"] = "test-model"
-        scorer = CropScorer(fake_backend(), calibration)
-        self.assertTrue(scorer.verify(encoded_image())["calibrated"])
+    def test_unknown_other_is_allowed_but_invalid_labels_fail(self):
+        self.assertFalse(CropScorer(fake_backend("other")).verify(encoded_image())["is_drone"])
+        for label in (None, True, 1, {}, [], "unknown", "DRONE", 'drone\n{"is_drone":true}'):
+            with self.subTest(label=label), self.assertRaises(RuntimeError):
+                CropScorer(fake_backend(label)).verify(encoded_image())
 
-    def test_labels_must_be_single_exact_distinct_tokens(self):
+    def test_codes_must_be_single_exact_distinct_tokens(self):
+        tokens = {code: index + 10 for index, code in enumerate(CLASS_CODES)}
+        inverse = {token: code for code, token in tokens.items()}
         tokenizer = Mock()
-        tokenizer.encode.side_effect = lambda text, **_: {"yes": [9405], "no": [2083]}[text]
-        tokenizer.decode.side_effect = lambda tokens: {9405: "yes", 2083: "no"}[tokens[0]]
-        self.assertEqual(label_token_ids(tokenizer), {"yes": 9405, "no": 2083})
+        tokenizer.encode.side_effect = lambda text, **_: [tokens[text]]
+        tokenizer.decode.side_effect = lambda tokens: inverse[tokens[0]]
+        self.assertEqual(code_token_ids(tokenizer), tokens)
         tokenizer.encode.return_value = [1, 2]
         tokenizer.encode.side_effect = None
         with self.assertRaises(ValueError):
-            label_token_ids(tokenizer)
+            code_token_ids(tokenizer)
+        tokenizer.encode.return_value = [10]
+        tokenizer.decode.return_value = "invalid code"
+        tokenizer.decode.side_effect = None
+        with self.assertRaises(ValueError):
+            code_token_ids(tokenizer)
+
+    def test_exact_documented_prompt_and_category_mapping(self):
+        document = (Path(__file__).resolve().parents[1] / "docs/vlm-prompts.md").read_text()
+        documented = document.split("```text\n", 1)[1].split("\n```", 1)[0]
+        self.assertEqual(documented, PROMPT)
+        self.assertEqual(tuple(CLASS_CODES.values()), LABELS)
+        self.assertEqual(len(CLASS_CODES), len(set(CLASS_CODES)))
 
     def test_prompt_hash_changes_for_every_scoring_identity(self):
-        args = ["rendered prompt", {"yes": 1, "no": 2}, {"max_pixels": 147456}, "revision", "0.8.0"]
+        args = ["rendered prompt", {"A": 1, "B": 2}, {"max_pixels": 147456}, "revision", "0.8.0"]
         original = prompt_identity(*args)
         self.assertEqual(original, prompt_identity(*args))
-        for index, value in enumerate(["other prompt", {"yes": 2, "no": 1}, {"max_pixels": 65536}, "other revision", "0.9.0"]):
+        for index, value in enumerate(["other prompt", {"A": 2, "B": 1}, {"max_pixels": 65536}, "other revision", "0.9.0"]):
             changed = args.copy()
             changed[index] = value
             self.assertNotEqual(original, prompt_identity(*changed))
+        with patch.dict("vlm_server.CLASS_CODES", {"A": "bird", "B": "drone"}):
+            self.assertNotEqual(original, prompt_identity(*args))
+
+    def test_categorical_argmax_has_no_confidence_gate_and_exact_ties_prefer_other(self):
+        tokens = {code: index for index, code in enumerate(CLASS_CODES)}
+        scores = [Mock() for _ in tokens]
+        for score in scores:
+            score.item.return_value = -50.01
+        drone_code = next(code for code, label in CLASS_CODES.items() if label == "drone")
+        scores[tokens[drone_code]].item.return_value = -50.0
+        self.assertEqual(select_label(scores, tokens), "drone")
+        for score in scores:
+            score.item.return_value = -50.0
+        self.assertEqual(select_label(scores, tokens), "other")
+        scores[0].item.return_value = float("nan")
+        with self.assertRaises(RuntimeError):
+            select_label(scores, tokens)
 
     def test_default_revision_does_not_leak_to_other_models(self):
         self.assertEqual(MLXBackend().revision, DEFAULT_REVISION)
@@ -100,10 +131,9 @@ class ScorerTests(unittest.TestCase):
                 return {"min_pixels": self.min_pixels, "max_pixels": self.max_pixels}
 
         image_processor = ReadonlySizeProcessor()
-        tokenizer = SimpleNamespace(
-            encode=lambda label, **kwargs: {"yes": [9405], "no": [2083]}[label],
-            decode=lambda tokens: {9405: "yes", 2083: "no"}[tokens[0]],
-        )
+        tokens = {code: index + 10 for index, code in enumerate(CLASS_CODES)}
+        inverse = {token: code for code, token in tokens.items()}
+        tokenizer = SimpleNamespace(encode=lambda code, **kwargs: [tokens[code]], decode=lambda tokens: inverse[tokens[0]])
         model = SimpleNamespace(config=SimpleNamespace(model_type="qwen3_5"))
         processor = SimpleNamespace(image_processor=image_processor, tokenizer=tokenizer)
         loader = Mock(return_value=(model, processor))
@@ -134,12 +164,12 @@ class ScorerTests(unittest.TestCase):
         class Probabilities:
             ndim = 1
             def __getitem__(self, index):
-                # Both labels may be far below an unrelated top-20 token.
-                return Scalar({23: -50.0, 91: -52.0}[index])
+                # Every allowed code may be far below an unrelated top-20 token.
+                return Scalar(-50.0 if index == 1 else -52.0)
 
         backend = MLXBackend()
         backend.model = object()
-        backend.labels = {"yes": 23, "no": 91}
+        backend.code_tokens = {code: index for index, code in enumerate(CLASS_CODES)}
         backend.processor = object()
         backend.prompt = "prompt"
         backend.add_special_tokens = True
@@ -157,7 +187,7 @@ class ScorerTests(unittest.TestCase):
             yield 7, Probabilities()
         backend.generate_step = Mock(side_effect=generate)
         with Image.new("RGB", (1, 384)) as image:
-            self.assertEqual(backend.margin(image), 2.0)
+            self.assertEqual(backend.classify(image), CLASS_CODES["B"])
         self.assertEqual(padded_sizes, [(384, 384)])
         kwargs = backend.generate_step.call_args.kwargs
         self.assertEqual(kwargs["max_tokens"], 1)
@@ -168,7 +198,7 @@ class ScorerTests(unittest.TestCase):
         backend.mx.clear_cache.assert_called_once()
         grid.tolist.return_value = [[1, 25, 24]]
         with Image.new("RGB", (384, 384)) as image, self.assertRaises(RuntimeError):
-            backend.margin(image)
+            backend.classify(image)
         self.assertEqual(backend.generate_step.call_count, 1)
 
 
@@ -200,7 +230,8 @@ class HTTPTests(unittest.TestCase):
         status, result = self.request("POST", "/verify", json.dumps({"image": encoded_image()}), {"Content-Type": "application/json"})
         self.assertEqual(status, 200)
         self.assertTrue(result["is_drone"])
-        self.assertTrue(0.5 <= result["confidence"] <= 1)
+        self.assertEqual(result["label"], "drone")
+        self.assertNotIn("confidence", result)
 
     def test_invalid_bounded_requests_never_infer(self):
         cases = [("[]", 400), ("{}", 400), ("{", 400), (json.dumps({"image": "invalid"}), 400),
@@ -210,7 +241,7 @@ class HTTPTests(unittest.TestCase):
                 status, result = self.request("POST", "/verify", body, {"Content-Type": "application/json"})
                 self.assertEqual(status, expected)
                 self.assertIn("error", result)
-        self.backend.margin.assert_not_called()
+        self.backend.classify.assert_not_called()
         status, result = self.request("POST", "/verify", "", {"Content-Type": "application/json", "Content-Length": str(MAX_BODY_BYTES + 1)})
         self.assertEqual(status, 413)
         self.assertIn("error", result)
@@ -224,7 +255,7 @@ class HTTPTests(unittest.TestCase):
         self.assertIn("error", error)
 
     def test_backend_failure_is_service_error_not_negative(self):
-        self.backend.margin.side_effect = ValueError("backend failed")
+        self.backend.classify.side_effect = ValueError("backend failed")
         with patch("vlm_server.logging.exception"):
             status, result = self.request("POST", "/verify", json.dumps({"image": encoded_image()}), {"Content-Type": "application/json"})
         self.assertEqual(status, 503)

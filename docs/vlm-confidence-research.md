@@ -1,6 +1,6 @@
 # VLM confidence for drone verification
 
-Researched on 2026-11-17. This implementation uses a binary token-probability margin and optional post-hoc calibration. It does not ask a vision-language model to invent a confidence percentage. No drone calibration dataset has been fitted or drone correctness rate measured in this change; `0.85` is a provisional decision threshold.
+Researched on 2026-11-17. This note describes the original binary-confidence experiment. The active scorer now chooses a broad object label and returns a binary result without a confidence gate; see `vlm-prompts.md`. Its API no longer emits these binary scores or accepts this calibration artifact. This implementation uses a binary token-probability margin and optional post-hoc calibration. It does not ask a vision-language model to invent a confidence percentage. No drone calibration dataset has been fitted or drone correctness rate measured in this change; `0.85` is a provisional decision threshold.
 
 ## Algorithms and evidence
 

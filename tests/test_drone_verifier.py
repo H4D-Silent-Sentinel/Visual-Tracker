@@ -13,7 +13,7 @@ class VerifierTests(unittest.TestCase):
         self.now = 0.0
         self.image = np.random.default_rng(1).integers(0, 255, (240, 320, 3), dtype=np.uint8)
         self.calls = []
-        self.reply = dict(is_drone=True, confidence=.96, p_drone=.96, calibrated=False)
+        self.reply = dict(is_drone=True, label='drone')
         self.verifier = DroneVerifier(clock=lambda: self.now, request=self.request)
         self.addCleanup(self.verifier.close)
 
@@ -46,19 +46,19 @@ class VerifierTests(unittest.TestCase):
             self.update(box=(40+n%30, 40, 80+n%30, 80))
         self.assertEqual(len(self.calls), 1)
 
-    def test_confident_negative_is_rejected_and_uncertain_is_not(self):
-        self.reply = dict(is_drone=False, confidence=.98, p_drone=.02, calibrated=True)
+    def test_binary_negative_is_rejected_without_confidence_gate(self):
+        self.reply = dict(is_drone=False, label='bird')
         self.update()
         self.now = .6
         self.update()
         self.assertFalse(self.wait_reply('rejected')['is_drone'])
         self.assertEqual(len(self.calls), 1)
         self.verifier.reset()
-        self.reply = dict(is_drone=False, confidence=.6, p_drone=.4, calibrated=False)
+        self.reply = dict(is_drone=True, label='drone')
         self.update()
         self.now += .6
         self.update()
-        self.wait_reply('uncertain')
+        self.wait_reply('confirmed')
 
     def test_larger_view_triggers_update_but_jitter_does_not(self):
         self.update()
@@ -103,7 +103,7 @@ class VerifierTests(unittest.TestCase):
             if len(self.calls) == 1:
                 started.set()
                 release.wait(2)
-                return dict(is_drone=False, confidence=.97, p_drone=.03, calibrated=False)
+                return dict(is_drone=False, label='kite')
             return dict(self.reply)
         self.verifier.request = reviewing
         self.update()
@@ -178,14 +178,15 @@ class CropAndResponseTests(unittest.TestCase):
         self.assertIsNone(crop_target(frame, [40, 40, 30, 30]))
         self.assertIsNone(crop_target(frame, [0, 0, float('nan'), 50]))
 
-    def test_verdict_requires_real_binary_and_consistent_finite_probability(self):
-        tied = dict(is_drone=False, confidence=.5, p_drone=.5, calibrated=False)
-        self.assertEqual(validate_verdict(tied), tied)
+    def test_verdict_requires_real_binary_and_consistent_allowed_label(self):
+        valid = dict(is_drone=False, label='bird')
+        self.assertEqual(validate_verdict(valid), valid)
         for bad in [
-            dict(is_drone='false', confidence=.95, p_drone=.05, calibrated=False),
-            dict(is_drone=False, confidence=float('nan'), p_drone=.05, calibrated=False),
-            dict(is_drone=True, confidence=.99, p_drone=.1, calibrated=False),
-            dict(is_drone=False, confidence=.9, p_drone=2, calibrated=False),
+            dict(is_drone='false', label='bird'),
+            dict(is_drone=False, label='drone'),
+            dict(is_drone=True, label='bird'),
+            dict(is_drone=False, label='invented class'),
+            dict(is_drone=True),
         ]:
             with self.subTest(bad=bad), self.assertRaises(ValueError):
                 validate_verdict(bad)

@@ -486,9 +486,9 @@ class Engine(threading.Thread):
                 if not rejected:
                     brackets(out, x1, y1, x2, y2, col, 4 if main else 2)
                 if s['verify']:
-                    tag = 'FALSE REVIEW: NOT A DRONE' if rejected else 'DRONE' if verdict.get('status') == 'confirmed' else verdict.get('status', 'unverified').upper()
-                    if 'confidence' in verdict:
-                        tag += f" VLM {verdict['confidence']*100:.0f}%"
+                    tag = 'DRONE NOT DETECTED' if rejected else 'DRONE DETECTED' if verdict.get('status') == 'confirmed' else verdict.get('status', 'unverified').upper()
+                    if 'label' in verdict:
+                        tag += f" ({verdict['label']})"
                 else:
                     tag = f"{d['label'].upper()} {d['conf']*100:.0f}%"
                 if d["id"] is not None:

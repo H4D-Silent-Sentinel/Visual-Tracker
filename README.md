@@ -53,28 +53,23 @@ Wait for `Scorer ready`, then use either the dashboard's **Live → Verify with 
 # Add --source path/to/video.mp4 for a recorded clip.
 ```
 
-The CLI accepts `--verify-confidence 0.85`. This initial threshold is provisional. Verification is opt-in; Clip Review continues to display its saved YOLO predictions.
+Verification is opt-in; Clip Review continues to display its saved YOLO predictions. The Live YOLO confidence cutoff is **0.35** (the CLI detector defaults to **0.25**, configurable with `--conf`). The VLM chooses one of 35 object labels and maps only `drone` to yes. There is **no additional VLM confidence cutoff** or percentage display; the former 0.85 gate and `--verify-confidence` option are removed.
 
 Candidates are cropped from raw frames, padded 25%, and conventionally resized while preserving aspect ratio. The scorer bounds its actual image preprocessing to 384 pixels per side. It uses one selected crop, no generated chain of thought, and no generative super-resolution. Tiny candidates below 12 native pixels stay unverified. Up to 32 track records and eight queued reviews are retained to bound memory; expired/reset identities cannot inherit stale results.
 
-Confident **yes** keeps a drone lock. Confident **no** removes the lock and shows **FALSE REVIEW: NOT A DRONE**. Pending reviews, low confidence, and errors remain visibly unverified. Restart/toggle verification after starting an unavailable scorer; failures do not cause timer-based retries.
+**Drone detected** keeps the lock when the VLM labels the candidate `drone`. **Drone not detected** rejects other labels. While waiting, the panel says **Checking for drone**; failures say **Unable to check**. If YOLO never proposes a box, the panel explicitly says that no YOLO candidate was available rather than claiming the VLM rejected it. Restart/toggle verification after starting an unavailable scorer; failures do not cause timer-based retries.
 
-The local `POST http://127.0.0.1:8002/verify` endpoint accepts `{"image":"<base64 JPEG crop>"}` and returns a binary verdict and probability, for example:
+The local `POST http://127.0.0.1:8002/verify` endpoint accepts `{"image":"<base64 JPEG crop>"}` and returns an allowed object label plus a binary drone decision, for example:
 
 ```json
-{"is_drone":false,"confidence":0.96,"p_drone":0.04,"raw_margin":-3.18,"calibrated":false,"model":"mlx-community/Qwen3.5-2B-4bit","prompt_hash":"...","model_revision":"..."}
+{"is_drone":false,"label":"bird","model":"mlx-community/Qwen3.5-2B-4bit","prompt_hash":"...","model_revision":"..."}
 ```
 
-This illustrates the schema, not a measured result. Python constructs the JSON from the VLM's first-token `yes`/`no` log probabilities. `p_drone` is normalized over those two labels; `confidence` is the selected label's probability. A raw score is **not measured accuracy**. The scorer never asks the model to invent a percentage.
+The model reviews **YOLO-positive crops only**, once per new or meaningfully updated candidate. It classifies the central object among drone, bird, kite, airplane, helicopter, balloon, bat, insect, butterfly, cloud, leaf, branch, tree, flag, antenna, pole, person, car, truck, bus, bicycle, motorcycle, boat, ship, building, window, reflection, camera, satellite dish, paraglider, plastic bag, umbrella, wind turbine, smoke, and other. Python constructs JSON from the winning one-token menu code. The VLM does not generate percentages or an explanation. No second YOLO model is loaded.
 
-To calibrate, collect labeled scores with real `source_id`/`clip_id` and scorer identity into a dedicated calibration JSONL and a separate evaluation JSONL. Both classes must appear in calibration, and source/clip overlap is rejected. Then:
+[docs/vlm-prompts.md](docs/vlm-prompts.md) contains the **exact prompt**, class menu, and scoring policy. [docs/candidate-classification.md](docs/candidate-classification.md) describes the labeled classification test. The earlier confidence/calibration study and saved-score utility remain in the repo for research, but the categorical scorer does not apply that former binary calibration.
 
-```sh
-.venv/bin/python scripts/evaluate/calibrate_vlm.py --calibration scored-calibration.jsonl --evaluation scored-heldout.jsonl --output calibration.json
-HF_HOME="$PWD/.venv/huggingface" .venv/bin/python vlm_server.py --calibration calibration.json
-```
-
-The fit uses positive-temperature logistic calibration with a bias and reports raw/calibrated NLL, Brier score, reliability/ECE, confusion counts, and accepted-decision coverage on the separate evaluation set. Model/prompt/preprocessing identity mismatches reject the calibration file. No fitted drone calibration is shipped. [docs/vlm-confidence-research.md](docs/vlm-confidence-research.md) explains the methods, evidence, manifest format, and limitations.
+The supplied drone screenshot passed YOLO at both input sizes and the categorical VLM identified its crop as `drone`. A five-inference MPS timing check on the same screenshot measured **64.6 inference FPS at 640** and **57.3 at 960** on a 16 GiB Mac. These timings exclude capture, video encoding, and VLM reviews; they are not live-camera FPS or a dataset accuracy result. Lower input resolution can miss smaller targets. The categorical VLM's warm review took about **0.6 seconds** in a scorer-only check. Actual shared-GPU performance and false positives require a representative recorded collection; a synthetic blank crop was labeled `flag`, so category accuracy is still imperfect even though its binary result was non-drone.
 
 Run the new unit/integration checks with `.venv/bin/python -m unittest discover -s tests -v`. Browser checks are in `tests/browser/`.
 

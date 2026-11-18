@@ -33,7 +33,6 @@ def parse_args():
     p.add_argument("--save", action="store_true", help="save annotated video to runs/")
     p.add_argument("--no-show", action="store_true", help="don't open a window")
     p.add_argument("--verify", action="store_true", help="review new flying-object tracks with the local VLM scorer")
-    p.add_argument("--verify-confidence", type=float, default=0.85, help="minimum VLM confidence for a confirmed yes/no")
     return p.parse_args()
 
 
@@ -58,7 +57,7 @@ def main():
     device = pick_device()
     classes = list(DRONE_LIKE.values()) if a.drone_like else None
     model = YOLO(a.model)
-    verifier = DroneVerifier(a.verify_confidence) if a.verify else None
+    verifier = DroneVerifier() if a.verify else None
     if a.verify and classes is None:
         classes = [cid for cid, name in model.names.items() if name.lower() in {'drone', 'uav', *DRONE_LIKE}]
         if not classes:
@@ -93,8 +92,8 @@ def main():
                 v = target['verification']
                 status = v['status']
                 color = (60, 220, 120) if status == 'confirmed' else (60, 80, 240) if status == 'rejected' else (60, 200, 240)
-                line = 'FALSE REVIEW: NOT A DRONE' if status == 'rejected' else 'DRONE LOCK' if status == 'confirmed' else status.upper()
-                line += f" #{tid}" + (f" VLM {v['confidence']:.0%}" if 'confidence' in v else '')
+                line = 'DRONE NOT DETECTED' if status == 'rejected' else 'DRONE DETECTED' if status == 'confirmed' else status.upper()
+                line += f" #{tid}" + (f" ({v['label']})" if 'label' in v else '')
                 if status != 'rejected':
                     cv2.rectangle(frame, (int(x1), int(y1)), (int(x2), int(y2)), color, 2)
                 cv2.putText(frame, line, (int(x1), max(20, int(y1)-8)), cv2.FONT_HERSHEY_SIMPLEX, .6, color, 2)

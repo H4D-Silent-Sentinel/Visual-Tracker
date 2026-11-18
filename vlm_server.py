@@ -9,10 +9,11 @@ import json
 import logging
 import math
 import socket
+import string
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from importlib.metadata import version
 
-from vlm_confidence import load_calibration, score_margin, validate_calibration
+from candidate_labels import DRONE_LABEL, LABELS, OTHER_LABEL
 
 
 DEFAULT_MODEL = "mlx-community/Qwen3.5-2B-4bit"
@@ -20,41 +21,56 @@ DEFAULT_REVISION = "674aaa7240b91e8012fcad5d791b7dfe5ba90207"
 MAX_SIDE = 384
 MAX_BODY_BYTES = 750_000
 MAX_JPEG_BYTES = 512_000
+if not 0 < len(LABELS) <= 52:
+    raise ValueError("Classification needs between 1 and 52 labels")
+CLASS_CODES = dict(zip(string.ascii_uppercase + string.ascii_lowercase, LABELS))
 PROMPT = (
-    "Is the central object a drone: a quadcopter, multirotor, or fixed-wing UAV? "
-    "Judge the object itself, using visible rotor arms, propellers, or rigid UAV structure. "
-    "Distinguish birds with feathers or flapping wings, kites with fabric or tails, "
-    "and ordinary crewed airplanes. Do not infer a drone from the background. "
-    "Answer with exactly one lowercase word: yes or no."
+    "Classify the central visible object in this cropped image using the menu below.\n"
+    "If the image is blank, shows only background, or the central object cannot be identified, choose other. "
+    "Otherwise choose the single category best supported by the object's visible structure.\n"
+    "The drone category includes unmanned quadcopters, FPV drones, multirotors, and fixed-wing UAVs. "
+    "Rotor arms and propellers can distinguish a drone; feathers or flapping wings indicate a bird; "
+    "fabric or trailing strings can indicate a kite. Airplane and helicopter refer to ordinary crewed aircraft.\n"
+    "Answer with exactly one case-sensitive menu code. Do not include words, punctuation, or reasoning.\n\n"
+    + "\n".join(f"{code}: {label}" for code, label in CLASS_CODES.items())
 )
 
 
-def prompt_identity(formatted_prompt, label_ids, processor_config, revision, package_versions):
-    """Changing instructions, weights, tokenization or preprocessing invalidates calibration."""
+def prompt_identity(formatted_prompt, code_tokens, processor_config, revision, package_versions):
+    """Changing instructions, weights, tokenization or preprocessing changes scorer identity."""
     identity = {
-        "scorer_version": 1,
+        "scorer_version": 2,
         "prompt": PROMPT,
         "formatted_prompt": formatted_prompt,
-        "label_ids": label_ids,
+        "class_codes": CLASS_CODES,
+        "code_token_ids": code_tokens,
         "image_processor": processor_config,
         "model_revision": revision,
         "package_versions": package_versions,
         "image_input": "base64 JPEG RGB; side <=384; centered square gray127 padding without resizing",
-        "scoring": "first-token logP(yes)-logP(no), no sampling penalties, no thinking",
+        "scoring": "largest allowed first-token code logP; exact ties prefer other; no sampling penalties or thinking",
     }
     return hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
 
 
-def label_token_ids(tokenizer):
+def code_token_ids(tokenizer):
     ids = {}
-    for label in ("yes", "no"):
-        encoded = tokenizer.encode(label, add_special_tokens=False)
-        if len(encoded) != 1 or tokenizer.decode(encoded) != label:
-            raise ValueError(f"Model must encode {label!r} as one exact token")
-        ids[label] = int(encoded[0])
-    if ids["yes"] == ids["no"]:
-        raise ValueError("Model yes/no token IDs must differ")
+    for code in CLASS_CODES:
+        encoded = tokenizer.encode(code, add_special_tokens=False)
+        if len(encoded) != 1 or tokenizer.decode(encoded) != code:
+            raise ValueError(f"Model must encode menu code {code!r} as one exact token")
+        ids[code] = int(encoded[0])
+    if len(set(ids.values())) != len(ids):
+        raise ValueError("Model menu code token IDs must differ")
     return ids
+
+
+def select_label(logprobs, code_tokens):
+    scores = {code: float(logprobs[token_id].item()) for code, token_id in code_tokens.items()}
+    if not all(math.isfinite(score) for score in scores.values()):
+        raise RuntimeError("MLX returned non-finite category scores")
+    code = max(scores, key=lambda code: (scores[code], CLASS_CODES[code] == OTHER_LABEL))
+    return CLASS_CODES[code]
 
 
 class MLXBackend:
@@ -80,7 +96,7 @@ class MLXBackend:
 
         model, processor = load(self.model_name, revision=self.revision, trust_remote_code=False)
         tokenizer = processor.tokenizer if hasattr(processor, "tokenizer") else processor
-        self.labels = label_token_ids(tokenizer)
+        self.code_tokens = code_token_ids(tokenizer)
         # The checkpoint's default minimum area otherwise enlarges small crops substantially.
         image_processor = processor.image_processor
         if model.config.model_type.startswith("qwen"):
@@ -91,7 +107,7 @@ class MLXBackend:
             add_generation_prompt=True, enable_thinking=False,
         )
         self.prompt_hash = prompt_identity(
-            self.prompt, self.labels, image_processor.to_dict(), self.revision,
+            self.prompt, self.code_tokens, image_processor.to_dict(), self.revision,
             {name: version(name) for name in ("mlx-vlm", "mlx", "transformers", "Pillow")},
         )
         self.add_special_tokens = should_add_special_tokens(model.config.model_type, processor)
@@ -102,7 +118,7 @@ class MLXBackend:
         self.processor = processor
         self.model = model
 
-    def margin(self, image):
+    def classify(self, image):
         from PIL import Image
 
         self.load()
@@ -130,13 +146,8 @@ class MLXBackend:
             _, logprobs = next(steps)
             if logprobs is None or logprobs.ndim != 1:
                 raise RuntimeError("MLX did not return a full first-token probability vector")
-            # Read both labels from the whole vocabulary, even when neither is in the top 20.
-            yes = float(logprobs[self.labels["yes"]].item())
-            no = float(logprobs[self.labels["no"]].item())
-            margin = yes - no
-            if not math.isfinite(yes) or not math.isfinite(no) or not math.isfinite(margin):
-                raise RuntimeError("MLX returned non-finite label probabilities")
-            return margin
+            # Score every allowed code from the full vocabulary, independent of the sampled token.
+            return select_label(logprobs, self.code_tokens)
         finally:
             steps.close()
             self.mx.clear_cache()
@@ -168,23 +179,22 @@ def decode_crop(encoded):
 
 
 class CropScorer:
-    def __init__(self, backend, calibration=None):
+    def __init__(self, backend):
         self.backend = backend
-        self.calibration = calibration
-        if calibration is not None:
-            validate_calibration(calibration, model=backend.model_name, prompt_hash=backend.prompt_hash)
 
     def verify(self, encoded):
         image = decode_crop(encoded)
         try:
-            margin = self.backend.margin(image)
-            score = score_margin(margin, self.calibration)
+            label = self.backend.classify(image)
+            if not isinstance(label, str) or label not in LABELS:
+                raise ValueError("VLM returned an invalid category label")
         except Exception as exc:
             raise RuntimeError("VLM inference failed") from exc
         finally:
             image.close()
         return {
-            **score,
+            "is_drone": label == DRONE_LABEL,
+            "label": label,
             "model": self.backend.model_name,
             "prompt_hash": self.backend.prompt_hash,
             "model_revision": self.backend.revision,
@@ -228,7 +238,7 @@ class VerificationHandler(BaseHTTPRequestHandler):
             "model": backend.model_name,
             "model_revision": backend.revision,
             "prompt_hash": backend.prompt_hash,
-            "calibrated": self.server.scorer.calibration is not None,
+            "labels": LABELS,
         })
 
     def do_POST(self):
@@ -273,16 +283,12 @@ def main():
     parser.add_argument("--model", default=DEFAULT_MODEL)
     parser.add_argument("--revision", help="Hugging Face commit; default model uses a pinned commit")
     parser.add_argument("--port", type=int, default=8002)
-    parser.add_argument("--calibration", help="Identity-matched JSON from scripts/evaluate/calibrate_vlm.py")
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
     backend = MLXBackend(args.model, args.revision)
-    if args.calibration and backend.revision is None:
-        parser.error("--calibration requires --revision for a custom model")
     logging.info("Loading %s at %s locally", backend.model_name, backend.revision or "default revision")
     backend.load()
-    calibration = load_calibration(args.calibration, model=backend.model_name, prompt_hash=backend.prompt_hash) if args.calibration else None
-    with VerificationServer(("127.0.0.1", args.port), CropScorer(backend, calibration)) as server:
+    with VerificationServer(("127.0.0.1", args.port), CropScorer(backend)) as server:
         logging.info("Scorer ready at http://127.0.0.1:%s; prompt_hash=%s", server.server_port, backend.prompt_hash)
         try:
             server.serve_forever()
