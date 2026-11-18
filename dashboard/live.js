@@ -1,6 +1,7 @@
-/* Live: the model runs on every frame as the clip plays. Sliders change it while you watch. */
+/* Live: detector settings and cached verification results update while the clip plays. */
 const LV = {wired: false, sources: [], paused: false, timer: null};
 const lset = (k, v) => fetch(`/live/set?${k}=${encodeURIComponent(v)}`);
+const liveText = (id, text) => {if ($(id).textContent !== text) $(id).textContent = text};
 const lnice = s => s.replace('footage/dut/', 'Tracking: ').replace('footage/negatives/', 'No drone: ').replace('footage/ours/', 'Ours: ').replace('footage/', 'Demo: ').replace('camera:', 'Camera ');
 async function liveEnter() {
   $('lvStatus').textContent = 'STARTING (loading the model)…';
@@ -18,6 +19,7 @@ async function liveEnter() {
     $('lvConf').oninput = e => {$('lvConfV').textContent = (+e.target.value).toFixed(2); lset('conf', e.target.value)};
     $('lvImgsz').onchange = e => lset('imgsz', e.target.value);
     $('lvTracker').onchange = e => {lset('tracker', e.target.value); liveHoldNote(e.target.value)};
+    $('lvVerify').onchange = e => lset('verify', e.target.checked);
     $('lvSize').onchange = e => lset('size_m', e.target.value);
     $('lvFov').onchange = e => lset('hfov', e.target.value);
     const b = (id, fn) => $(id).onclick = () => {fn(); $(id).blur()};
@@ -42,21 +44,33 @@ async function liveTick() {
   try {
     const s = await api('/live/stats');
     if (s.settings) {
-      const words = {LOCKED: 'TARGET LOCKED', COASTING: 'COASTING (just lost it)', SEARCHING: 'SEARCHING', IDLE: 'STARTING…', NO_CAMERA: 'NO CAMERA PICTURE'};
-      const el = $('lvStatus'); el.classList.toggle('locked', s.status === 'LOCKED' && !s.settings.paused); el.textContent = s.settings.paused ? '❚❚ PAUSED' : (words[s.status] || s.status);
+      const enabled = !!s.settings.verify, p = s.primary || s.candidate, v = p?.verification || s.verification || {};
+      const locked = s.status === 'LOCKED' && (!enabled || s.primary?.verification?.status === 'confirmed');
+      const status = s.status === 'LOCKED' && !locked ? 'UNVERIFIED' : s.status;
+      const verdicts = {confirmed: 'Drone detected', rejected: 'Drone not detected', pending: 'Checking for drone', uncertain: 'Unable to check', error: 'Unable to check', unverified: v.error ? 'Unable to check' : 'Checking for drone'};
+      const verdict = !enabled ? 'Verification off' : !p ? 'Drone not detected' : verdicts[v.status] || 'Checking for drone';
+      const words = {LOCKED: 'Drone detected', COASTING: enabled ? verdict : 'Coasting (just lost it)', SEARCHING: enabled ? verdict : 'Searching', REVIEWING: 'Checking for drone', FALSE_REVIEW: 'Drone not detected', UNVERIFIED: verdict, VERIFY_ERROR: 'Unable to check', IDLE: 'Starting…', NO_CAMERA: 'No camera picture'};
+      const el = $('lvStatus'); el.classList.toggle('locked', locked && !s.settings.paused); liveText('lvStatus', s.settings.paused ? '❚❚ PAUSED' : (words[status] || status));
       $('lvErr').hidden = !s.error; $('lvErr').textContent = s.error ? '✕ ' + s.error : '';
-      el.style.color = s.status === 'LOCKED' ? 'var(--ok)' : s.status === 'COASTING' ? 'var(--fa)' : s.status === 'SEARCHING' ? 'var(--miss)' : 'var(--muted)';
+      el.style.color = s.settings.paused ? 'var(--muted)' : locked ? 'var(--ok)' : status === 'FALSE_REVIEW' || status === 'SEARCHING' && !p ? 'var(--miss)' : 'var(--muted)';
       $('lvTitle').textContent = LV.cams[s.settings.source] || lnice(s.settings.source);
       if (document.activeElement !== $('lvTracker') && $('lvTracker').value !== s.settings.tracker) {$('lvTracker').value = s.settings.tracker; liveHoldNote(s.settings.tracker)}
       for (const [id, k] of [['lvSource', 'source'], ['lvModel', 'model']]) if (document.activeElement !== $(id) && $(id).value !== s.settings[k]) $(id).value = s.settings[k];
+      if (document.activeElement !== $('lvVerify')) $('lvVerify').checked = enabled;
       if (s.total) {$('lvProg').style.width = (100 * s.pos / s.total) + '%'; $('lvTime').textContent = mmss(s.pos / s.source_fps) + ' / ' + mmss(s.total / s.source_fps)} else {$('lvProg').style.width = '0'; $('lvTime').textContent = 'live'}
-      const p = s.primary;
+      liveText('lvVerdict', verdict);
+      $('lvVerification').dataset.status = !enabled ? 'off' : !p ? 'rejected' : v.status || 'unverified';
+      const notes = {confirmed: 'VLM identified this candidate as a drone.', rejected: 'VLM rejected this YOLO candidate.', pending: 'Reviewing this YOLO candidate.', uncertain: 'Verification did not reach a clear result.', error: 'Verification is unavailable. This candidate is not confirmed.', unverified: v.error ? 'This candidate could not be checked.' : 'Waiting to review this YOLO candidate.'};
+      liveText('lvVerificationNote', !enabled ? 'Enable verification to check detector candidates.' : !p ? 'YOLO has not proposed a candidate.' : notes[v.status] || 'Waiting to review this YOLO candidate.');
+      $('lvObjectLabel').hidden = !enabled || !p || !v.label;
+      liveText('lvObjectLabel', $('lvObjectLabel').hidden ? '' : 'Object label: ' + v.label);
       $('lvC').innerHTML = p ? Math.round(p.conf * 100) + '<small>%</small>' : '—';
       $('lvR').innerHTML = p && p.range_m ? '~' + Math.round(p.range_m) + '<small>m</small>' : '—';
       $('lvId').textContent = p && p.id != null ? p.id : '—';
       $('lvFps').textContent = s.fps.toFixed(0);
       $('lvLocked').textContent = s.locked_pct.toFixed(1) + '%'; $('lvCur').textContent = s.current_lock_s.toFixed(1) + ' s';
-      $('lvLong').textContent = s.longest_lock_s.toFixed(1) + ' s'; $('lvReacq').textContent = s.reacquisitions; $('lvN').textContent = s.targets.length;
+      $('lvLong').textContent = s.longest_lock_s.toFixed(1) + ' s'; $('lvReacq').textContent = s.reacquisitions; $('lvN').textContent = enabled ? s.targets.filter(t => t.verification?.status === 'confirmed').length : s.targets.length;
+      $('lvLockedLabel').textContent = enabled ? 'Time with confirmed lock' : 'Time with a box'; $('lvNLabel').textContent = enabled ? 'Confirmed targets in view' : 'Boxes in view';
       let c = $('lvSpark'), dpr = lvCanvas(c), g = c.getContext('2d'), W = c.width, H = c.height, h = s.conf_hist; g.clearRect(0, 0, W, H);
       g.strokeStyle = '#2e3338'; g.lineWidth = 1; [0.25, 0.5, 0.75].forEach(y => {g.beginPath(); g.moveTo(0, H * y); g.lineTo(W, H * y); g.stroke()});
       if (h.length) {const st = W / 149; g.beginPath(); h.forEach((v, i) => {const x = (150 - h.length + i) * st, y = H - v * H; i ? g.lineTo(x, y) : g.moveTo(x, y)}); g.strokeStyle = '#6cc5b9'; g.lineWidth = 2 * dpr; g.stroke(); g.lineTo(W, H); g.lineTo((150 - h.length) * st, H); g.fillStyle = 'rgba(108,197,185,.15)'; g.fill()}
@@ -64,6 +78,6 @@ async function liveTick() {
       g.strokeStyle = '#2e3338'; g.lineWidth = 1; for (let i = 1; i < 4; i++) {g.beginPath(); g.moveTo(W * i / 4, 0); g.lineTo(W * i / 4, H); g.stroke(); g.beginPath(); g.moveTo(0, H * i / 4); g.lineTo(W, H * i / 4); g.stroke()}
       if (t.length) {g.lineWidth = 2 * dpr; for (let i = 1; i < t.length; i++) {g.strokeStyle = `rgba(255,107,61,${i / t.length})`; g.beginPath(); g.moveTo(t[i - 1][0] * W, t[i - 1][1] * H); g.lineTo(t[i][0] * W, t[i][1] * H); g.stroke()} const q = t[t.length - 1]; g.fillStyle = '#ff6b3d'; g.beginPath(); g.arc(q[0] * W, q[1] * H, 5 * dpr, 0, 7); g.fill()}
     }
-  } catch (e) {$('lvStatus').textContent = 'Server offline'}
+  } catch (e) {$('lvStatus').classList.remove('locked'); $('lvStatus').style.color = 'var(--muted)'; liveText('lvStatus', 'Unable to check'); $('lvVerification').dataset.status = 'error'; liveText('lvVerdict', 'Unable to check'); liveText('lvVerificationNote', 'Server offline. The latest result is unavailable.'); $('lvObjectLabel').hidden = true; liveText('lvObjectLabel', '')}
   LV.timer = setTimeout(liveTick, 150);
 }

@@ -1,7 +1,7 @@
 """Test 1: false alarms. Run the drone model on clips with NO drones (birds, kites)
 and count how often it draws a 'drone' box anyway.
 
-Usage: python test_false_alarms.py [--model ...] [--imgsz 960] [--conf 0.35]
+Usage: python scripts/evaluate/test_false_alarms.py [--model ...] [--imgsz 960] [--confs 0.25,0.35,0.5]
 Clips: footage/negatives/*  (Wikimedia Commons, see README)
 Writes runs/false_alarms/report.json and a contact sheet of the worst frames.
 """

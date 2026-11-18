@@ -1,7 +1,9 @@
-"""Quick browser check of the Live tab."""
+"""Quick browser check of the Live tab.
+Run: .venv/bin/python tests/browser/live_test.py
+"""
 from pathlib import Path
 from playwright.sync_api import sync_playwright
-S = Path(__file__).resolve().parent.parent / "runs" / "ui_check"; S.mkdir(parents=True, exist_ok=True)
+S = Path(__file__).resolve().parents[2] / "runs" / "ui_check"; S.mkdir(parents=True, exist_ok=True)
 with sync_playwright() as p:
     b = p.chromium.launch(channel="chrome", headless=True)
     pg = b.new_page(viewport={"width": 1440, "height": 900}); errs = []

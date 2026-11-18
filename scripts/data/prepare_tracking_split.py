@@ -4,7 +4,7 @@ The 20 DUT tracking videos have the drone marked in every frame, including the h
 where it flies in front of trees and buildings. We split them once, by difficulty:
   TRAIN_VIDEOS  -> every 4th frame becomes a training image (with its drone box)
   HELD_OUT      -> never trained on; the only videos v3's tracking score may be judged on
-Run:  .venv/bin/python prepare_tracking_split.py
+Run:  .venv/bin/python scripts/data/prepare_tracking_split.py
 """
 import json, shutil
 from pathlib import Path

@@ -3,12 +3,12 @@
 Writes footage/web/<key>.mp4 and footage/web/index.json with the verified frame count, fps and
 size of each copy. Frame N of a copy is frame N of its source, which is what lets the dashboard
 line up boxes, ground truth and the video scrubber.
-Run:  .venv/bin/python make_web_clips.py        (CPU only; safe to run while training)
+Run:  .venv/bin/python scripts/review/make_web_clips.py        (CPU only; safe to run while training)
 """
 import json, subprocess
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parents[2]
 SRC, OUT = ROOT / "footage", ROOT / "footage" / "web"
 EXT = {".webm", ".mp4", ".mov", ".mkv", ".avi", ".m4v", ".ogv"}
 GT = Path.home() / "yolo-datasets/dut-anti-uav/tracking/gt/Anti-UAV-Tracking-V0GT"

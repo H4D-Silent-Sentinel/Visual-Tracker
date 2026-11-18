@@ -1,12 +1,12 @@
 """Browser check of the dashboard with the installed Chrome (Playwright). Prints PASS/FAIL lines.
-Run:  .venv/bin/python dashboard/ui_test.py [--camera]
+Run:  .venv/bin/python tests/browser/ui_test.py [--camera]
 """
 import json, sys, time
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 URL = "http://localhost:8000"
-SHOTS = Path(__file__).resolve().parent.parent / "runs" / "ui_check"
+SHOTS = Path(__file__).resolve().parents[2] / "runs" / "ui_check"
 SHOTS.mkdir(parents=True, exist_ok=True)
 results = []
 
@@ -88,6 +88,7 @@ with sync_playwright() as p:
     s = st(page); n = page.evaluate("R.clip.frames")
     check("clicking the timeline seeks to that point", abs(s["frame"] - n / 2) < n * 0.02 + 2, f"frame {s['frame']} of {n}")
     # flag a frame
+    previous_flags = page.evaluate("fetch('/api/collect').then(r=>r.json()).then(d=>d.flags)")
     page.keyboard.press("m"); page.wait_for_timeout(500)
     fl = page.evaluate("fetch('/api/collect').then(r=>r.json()).then(d=>d.flags)")
     mine = [x for x in fl if x["clip"] == s["clip"] and x["frame"] == s["frame"]]
@@ -122,21 +123,32 @@ with sync_playwright() as p:
     page.locator("nav button[data-tab=collect]").click(); page.wait_for_function("C.clip && document.getElementById('labVid').readyState>=1", timeout=15000)
     page.wait_for_timeout(600)
     lab_clip = page.evaluate("C.clip.key")
+    label_state = page.evaluate("({frames:C.clip.frames,saved:Object.keys(C.saved).map(Number)})")
+    label_frame = next((frame for frame in range(0, label_state['frames'] - 5, 5) if frame not in label_state['saved'] and frame + 5 not in label_state['saved']), None)
+    if label_frame is None: raise RuntimeError('No unlabeled frame pair available; existing user labels were left untouched.')
+    page.locator('#labAuto').uncheck(); page.evaluate(f'labGo({label_frame})')
+    page.locator('#labBox').scroll_into_view_if_needed()
     cv = page.locator("#labCv").bounding_box()
     page.mouse.move(cv["x"] + cv["width"] * 0.40, cv["y"] + cv["height"] * 0.30); page.mouse.down()
     page.mouse.move(cv["x"] + cv["width"] * 0.50, cv["y"] + cv["height"] * 0.42, steps=5); page.mouse.up()
+    page.select_option('#labClass', 'drone'); page.evaluate('document.activeElement.blur()')
     page.keyboard.press("s"); page.wait_for_timeout(700)
     page.keyboard.press("n"); page.wait_for_timeout(700)
     fr = page.evaluate("C.frame")
     page.reload(); page.wait_for_function("typeof C!=='undefined' && C.clip && Object.keys(C.saved).length>=0", timeout=15000); page.wait_for_timeout(1200)
-    saved = page.evaluate(f"fetch('/api/labels?clip={lab_clip}').then(r=>r.json()).then(d=>d.labels)")
-    ok = "0" in saved and len(saved["0"]) == 1 and abs(saved["0"][0][0] - 0.40) < 0.03 and "5" in saved and saved["5"] == []
-    check("labels survive a reload (drawn box on frame 0, 'no drone' on frame 5)", ok, json.dumps(saved)[:120])
+    saved = page.evaluate(f"fetch('/api/labels?clip={lab_clip}').then(r=>r.json()).then(d=>d.classifications)")
+    drawn, background = saved.get(str(label_frame), {}), saved.get(str(label_frame + 5), {})
+    ok = drawn.get('label') == 'drone' and len(drawn.get('boxes', [])) == 1 and abs(drawn['boxes'][0][0] - 0.40) < 0.03 and background.get('no_drone') is True and background.get('boxes') == []
+    check("manual class and explicit background labels survive a reload", ok, json.dumps(saved)[:120])
+    page.locator('#collectionName').fill(f'browser_ui_{time.time_ns()}')
+    page.locator('#collectionExport').click(); page.wait_for_timeout(800)
+    check('classification collection exports frozen manifests', 'test.jsonl' in page.locator('#collectionMsg').inner_text())
     page.screenshot(path=str(SHOTS / "collect_desktop.png"), full_page=True)
-    for f in list(saved):
-        page.evaluate(f"fetch('/api/label',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{clip:'{lab_clip}',frame:{f},delete:true}})}})")
+    for f in (label_frame, label_frame + 5):
+        if str(f) in saved: page.evaluate(f"fetch('/api/classification/label',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{clip:'{lab_clip}',frame:{f},delete:true}})}})")
+    previous_ids = {flag['id'] for flag in previous_flags}
     for x in fl:
-        page.evaluate(f"fetch('/api/flag',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{remove:'{x['id']}'}})}})")
+        if x['id'] not in previous_ids: page.evaluate(f"fetch('/api/flag',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{remove:'{x['id']}'}})}})")
     page.wait_for_timeout(400)
 
     if "--camera" in sys.argv:

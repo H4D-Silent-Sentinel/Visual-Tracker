@@ -9,6 +9,8 @@ videos, where the true drone box is marked in every frame, and measure:
 
 Also writes plain .mp4 copies of each video to footage/dut/ for the dashboard.
 Seconds assume 30 frames per second.
+
+Run: .venv/bin/python scripts/evaluate/test_tracking.py [--model ...] [--no-mp4]
 """
 import argparse, json
 from pathlib import Path

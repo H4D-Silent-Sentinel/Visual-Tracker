@@ -14,6 +14,8 @@ import cv2
 import torch
 from ultralytics import YOLO
 
+from drone_verifier import DroneVerifier
+
 # COCO has no "drone" class yet; these are the closest stand-ins until we fine-tune.
 DRONE_LIKE = {"airplane": 4, "bird": 14, "kite": 33}
 
@@ -30,6 +32,7 @@ def parse_args():
     p.add_argument("--hfov", type=float, default=60.0, help="camera horizontal field of view, degrees")
     p.add_argument("--save", action="store_true", help="save annotated video to runs/")
     p.add_argument("--no-show", action="store_true", help="don't open a window")
+    p.add_argument("--verify", action="store_true", help="review new flying-object tracks with the local VLM scorer")
     return p.parse_args()
 
 
@@ -54,6 +57,11 @@ def main():
     device = pick_device()
     classes = list(DRONE_LIKE.values()) if a.drone_like else None
     model = YOLO(a.model)
+    verifier = DroneVerifier() if a.verify else None
+    if a.verify and classes is None:
+        classes = [cid for cid, name in model.names.items() if name.lower() in {'drone', 'uav', *DRONE_LIKE}]
+        if not classes:
+            raise ValueError('Verification requires drone, UAV, airplane, bird, or kite model classes')
     print(f"model={a.model} device={device} source={a.source}")
 
     writer, frames, t0, fps, last = None, 0, time.time(), 0.0, None
@@ -69,14 +77,26 @@ def main():
             inst = 1 / max(now - last, 1e-6)
             fps = inst if fps == 0 else 0.9 * fps + 0.1 * inst
         last = now
-        frame = r.plot()
+        targets = [{'id': int(b.id) if b.id is not None else None, 'box': b.xyxy[0].tolist(),
+                    'conf': float(b.conf), 'label': r.names[int(b.cls)]} for b in r.boxes]
+        if verifier:
+            verifier.update(r.orig_img, targets)
+        frame = r.orig_img.copy() if verifier else r.plot()
         h, w = frame.shape[:2]
 
-        for box in r.boxes:
-            x1, y1, x2, y2 = box.xyxy[0].tolist()
-            tid = int(box.id) if box.id is not None else -1
-            name = r.names[int(box.cls)]
-            line = f"#{tid} {name} {float(box.conf):.2f}"
+        for target in targets:
+            x1, y1, x2, y2 = target['box']
+            tid, name = target['id'], target['label']
+            line = f"#{tid} {name} {target['conf']:.2f}"
+            if verifier:
+                v = target['verification']
+                status = v['status']
+                color = (60, 220, 120) if status == 'confirmed' else (60, 80, 240) if status == 'rejected' else (60, 200, 240)
+                line = 'DRONE NOT DETECTED' if status == 'rejected' else 'DRONE DETECTED' if status == 'confirmed' else status.upper()
+                line += f" #{tid}" + (f" ({v['label']})" if 'label' in v else '')
+                if status != 'rejected':
+                    cv2.rectangle(frame, (int(x1), int(y1)), (int(x2), int(y2)), color, 2)
+                cv2.putText(frame, line, (int(x1), max(20, int(y1)-8)), cv2.FONT_HERSHEY_SIMPLEX, .6, color, 2)
             if a.range:
                 line += f"  ~{mil_range(x2 - x1, w, a.target_size, a.hfov):.0f} m"
                 cv2.putText(frame, line, (int(x1), int(y2) + 22),
@@ -98,6 +118,8 @@ def main():
                 break
 
     elapsed = time.time() - t0
+    if verifier:
+        verifier.close()
     if writer:
         writer.release()
         if frames == 1:  # single image: also save a still

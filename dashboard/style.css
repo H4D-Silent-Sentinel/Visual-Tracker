@@ -181,6 +181,9 @@ h3.sub3{font-size:14px;font-weight:600;margin:18px 0 6px}
 .lab canvas{position:absolute;inset:0;width:100%;height:100%;cursor:crosshair}
 #labStrip{display:block;width:100%;height:18px;margin-top:6px;border:1px solid var(--line);background:var(--panel);cursor:pointer}
 .labside{display:flex;flex-direction:column;gap:8px}
+.labside>label{display:flex;flex-direction:column;gap:3px;font-size:12.5px;color:var(--muted)}
+.labside>label select{width:100%}
+#collectionMsg,#collectionCommand{white-space:pre-wrap;overflow-wrap:anywhere;margin:8px 0}
 .labside .btn{text-align:left;display:flex;justify-content:space-between;align-items:center;gap:8px}
 .labside .two{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .labstatus{font:13px var(--mono);border-left:2px solid var(--line2);padding:4px 10px;min-height:44px}
@@ -203,6 +206,15 @@ body.hud .rec::before{content:"";display:inline-block;width:8px;height:8px;borde
 body.hud #lvStatus{border:1px solid currentColor;border-radius:8px;padding:7px 14px;font:500 14px var(--mono);letter-spacing:.12em}
 body.hud #lvStatus::before{content:"";display:inline-block;width:9px;height:9px;border-radius:50%;background:currentColor;box-shadow:0 0 12px currentColor;margin-right:9px;vertical-align:1px}
 body.hud #lvStatus.locked::before{animation:hudpulse 1.2s ease-in-out infinite}
+.lv-verify-control{font-size:12.5px;color:var(--muted);gap:6px 12px}
+.lv-verify-control input{accent-color:var(--accent)}
+.lv-verification{border:1px solid var(--line);border-left:3px solid var(--line2);border-radius:8px;background:var(--panel);padding:10px 12px;font-size:12.5px}
+#lvVerdict{font:500 16px var(--sans);overflow-wrap:anywhere}
+#lvVerificationNote,#lvObjectLabel{margin-top:5px;color:var(--muted);overflow-wrap:anywhere}
+.lv-verification[data-status=confirmed]{border-left-color:var(--ok)}
+.lv-verification[data-status=confirmed] #lvVerdict{color:var(--ok)}
+.lv-verification[data-status=rejected]{border-left-color:var(--miss)}
+.lv-verification[data-status=rejected] #lvVerdict{color:var(--miss)}
 body.hud .tele{border-radius:10px;background:var(--panel);overflow:hidden}
 body.hud .tele .v{font-size:30px}
 body.hud aside .tele>div{background:var(--panel2)}

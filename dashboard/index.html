@@ -87,7 +87,7 @@
 <section id="tab-live" hidden>
 <div class="review">
   <div class="main">
-    <div class="clipbar"><h1 id="lvTitle">Live</h1><span class="tag">model runs on every frame as it plays</span><span class="showing" id="lvStatus">—</span></div>
+    <div class="clipbar"><h1 id="lvTitle">Live</h1><span class="tag">detector runs on every frame</span><span class="showing" id="lvStatus" role="status" aria-live="polite">—</span></div>
     <div class="player" id="lvPlayer" style="aspect-ratio:16/9;max-width:calc(60vh * 1.7778)"><img id="lvImg" alt="Live video with the model's boxes" style="width:100%;height:100%;object-fit:contain;display:block"><div class="corner c1"></div><div class="corner c2"></div><div class="corner c3"></div><div class="corner c4"></div><div class="rec">LIVE</div></div>
     <div class="prog"><i id="lvProg"></i></div>
     <div id="lvErr" class="note" role="status" hidden style="border-left-color:var(--miss);color:var(--fg);margin:8px 0 0"></div>
@@ -101,23 +101,26 @@
     </div>
     <div class="tele">
       <div><span class="k">Model</span><select id="lvModel"></select></div>
-      <div style="flex:2 1 220px"><span class="k">Confidence cutoff · <b id="lvConfV">0.35</b></span><input type="range" id="lvConf" min="0.05" max="0.9" step="0.05" value="0.35" style="accent-color:var(--accent)"></div>
+      <div style="flex:2 1 220px"><span class="k">YOLO confidence cutoff · <b id="lvConfV">0.35</b></span><input type="range" id="lvConf" min="0.05" max="0.9" step="0.05" value="0.35" aria-label="YOLO confidence cutoff" style="accent-color:var(--accent)"></div>
       <div><span class="k">Tracker</span><select id="lvTracker"><option value="default">Default</option><option value="hold">Hold (keeps a locked drone)</option></select></div>
       <div><span class="k">Image size</span><select id="lvImgsz"><option value="640">640 px (fastest)</option><option value="960" selected>960 px</option><option value="1280">1280 px (small targets)</option></select></div>
       <div class="set"><label>Drone width (m)<input type="number" id="lvSize" step="0.05" value="0.35"></label><label>Camera view (°)<input type="number" id="lvFov" step="1" value="60"></label></div>
     </div>
+    <div class="ctl lv-verify-control"><label class="chk"><input type="checkbox" id="lvVerify" aria-describedby="lvVerifyNote"> Verify drones with local VLM</label><span id="lvVerifyNote">Checks new objects or meaningful appearance changes; reuses the result otherwise.</span></div>
     <details class="ver"><summary>What do v1, v2, v3 and “+ hold” mean?</summary><div class="verBody"></div></details>
     <div class="keys" id="lvNote"><kbd>Space</kbd> pause · <kbd>[</kbd> <kbd>]</kbd> change video · <kbd>R</kbd> restart. Teal brackets = main target, orange line = its path. Move the cutoff slider and watch boxes appear and drop.</div>
   </div>
   <aside class="clips">
-    <h3>Target</h3>
-    <div class="tele" style="margin-top:0"><div><span class="k">Confidence</span><span class="v" id="lvC">—</span></div><div><span class="k">Range (mil)</span><span class="v" id="lvR">—</span></div><div><span class="k">Track ID</span><span class="v" id="lvId">—</span></div><div><span class="k">Tracker FPS</span><span class="v" id="lvFps">—</span></div></div>
-    <h3>Confidence, last 5 s</h3>
-    <canvas id="lvSpark" height="64" style="width:100%;display:block;border:1px solid var(--line)"></canvas>
+    <h3>Target / candidate</h3>
+    <div class="tele" style="margin-top:0"><div><span class="k">YOLO confidence</span><span class="v" id="lvC">—</span></div><div><span class="k">Range (mil)</span><span class="v" id="lvR">—</span></div><div><span class="k">Track ID</span><span class="v" id="lvId">—</span></div><div><span class="k">Tracker FPS</span><span class="v" id="lvFps">—</span></div></div>
+    <h3>Drone verification</h3>
+    <div id="lvVerification" class="lv-verification" role="status" aria-live="polite" aria-atomic="true"><div id="lvVerdict">Verification off</div><div id="lvVerificationNote">Enable verification to check detector candidates.</div><div id="lvObjectLabel" hidden></div></div>
+    <h3>YOLO confidence, last 5 s</h3>
+    <canvas id="lvSpark" height="64" aria-label="YOLO confidence over the last five seconds" style="width:100%;display:block;border:1px solid var(--line)"></canvas>
     <h3>Target path</h3>
     <canvas id="lvPath" height="140" style="width:100%;display:block;border:1px solid var(--line)"></canvas>
     <h3>This session</h3>
-    <table><tr><td>Time with a box</td><td class="num" id="lvLocked">—</td></tr><tr><td>Current lock</td><td class="num" id="lvCur">—</td></tr><tr><td>Longest lock</td><td class="num" id="lvLong">—</td></tr><tr><td>Reacquisitions</td><td class="num" id="lvReacq">—</td></tr><tr><td>Boxes in view</td><td class="num" id="lvN">—</td></tr></table>
+    <table><tr><td id="lvLockedLabel">Time with a box</td><td class="num" id="lvLocked">—</td></tr><tr><td>Current lock</td><td class="num" id="lvCur">—</td></tr><tr><td>Longest lock</td><td class="num" id="lvLong">—</td></tr><tr><td>Reacquisitions</td><td class="num" id="lvReacq">—</td></tr><tr><td id="lvNLabel">Boxes in view</td><td class="num" id="lvN">—</td></tr></table>
   </aside>
 </div>
 </section>
@@ -157,6 +160,7 @@
         <label>Drone type<input type="text" id="mDrone" placeholder="e.g. DJI Mini 4"></label>
         <label>Background<select id="mBg"><option value="">not set</option><option>open sky</option><option>trees</option><option>buildings</option><option>mixed</option><option>other</option></select></label>
         <label>Notes<input type="text" id="mNotes" placeholder="e.g. 30 m, overcast"></label>
+        <label>Source/session ID (optional)<input type="text" id="mSource" maxlength="80" placeholder="e.g. mudd-rooftop-nov17"></label>
       </div>
       <div class="ctl">
         <button class="btn rec bigbtn" id="camRec">● Record</button>
@@ -168,7 +172,7 @@
   </div>
 
   <h2><span class="stepn">2</span>Label</h2>
-  <p class="cap">Draw a box around the drone, or mark the frame as no drone. With suggestions on, the model draws its guess first; fix it or accept it. Labels are saved in <span class="mono">our_data/labels/</span>, apart from the existing training data.</p>
+  <p class="cap">Draw a box around the object and choose its true label. Model boxes are suggestions for you to correct. Manual class labels are saved separately from drone training data. Use “No drone” for a background frame; box visible birds, kites, or other objects with their own label.</p>
   <div class="ctl">
     <label>Clip <select id="labClip"></select></label>
     <label>Every <select id="labStride"><option value="1">frame</option><option value="5" selected>5th frame</option><option value="15">15th frame</option><option value="30">30th frame</option></select></label>
@@ -179,11 +183,15 @@
     <div>
       <div class="lab" id="labBox"><video id="labVid" playsinline muted preload="auto"></video><canvas id="labCv"></canvas></div>
       <canvas id="labStrip" height="18" aria-label="Labeled frames in this clip. Click to jump."></canvas>
-      <div class="legend"><span><i style="background:var(--ok)"></i>drone labeled</span><span><i style="background:var(--muted)"></i>no drone</span><span><i style="background:#fff;width:3px"></i>this frame</span></div>
+      <div class="legend"><span><i style="background:var(--ok)"></i>drone labeled</span><span><i style="background:var(--fa)"></i>other object labeled</span><span><i style="background:var(--muted)"></i>no drone frame</span><span><i style="background:#fff;width:3px"></i>this frame</span></div>
     </div>
     <div class="labside">
+      <label>True object label<select id="labClass" required><option value="">Choose true label</option></select></label>
+      <label>Collection split<select id="labSplit" aria-describedby="labSplitHint"><option value="test">Test · held out</option><option value="development">Development</option></select></label>
+      <label>Source/session ID<input type="text" id="labSource" maxlength="80" required aria-describedby="labSplitHint"></label>
+      <p class="hint" id="labSplitHint">Keep one recording or session in one split. Test data stays held out.</p>
       <div id="labStatus" class="labstatus" role="status" aria-live="polite">Pick a clip.</div>
-      <button class="btn on" id="labSave" title="S or Enter">✓ Save box &amp; next <kbd>S</kbd></button>
+      <button class="btn on" id="labSave" title="S or Enter">✓ Save label &amp; next <kbd>S</kbd></button>
       <button class="btn" id="labNone" title="N">○ No drone &amp; next <kbd>N</kbd></button>
       <div class="two">
         <button class="btn" id="labPrev" title="A">◀ Back <kbd>A</kbd></button>
@@ -193,7 +201,7 @@
         <button class="btn" id="labPropose" title="P">Suggest <kbd>P</kbd></button>
         <button class="btn" id="labClear" title="X">Clear <kbd>X</kbd></button>
       </div>
-      <button class="btn" id="labDelete">Delete this frame's label</button>
+      <button class="btn" id="labDelete" disabled>Delete manual class label</button>
       <p class="hint">Drag on the picture to draw or redraw the box.</p>
     </div>
   </div>
@@ -203,7 +211,14 @@
     <div>
       <h3 class="sub3">Our recordings</h3>
       <div id="oursList"></div>
-      <h3 class="sub3">Training set</h3>
+      <h3 class="sub3">Classification test collection</h3>
+      <div id="classificationSummary" class="mono"></div>
+      <div class="ctl"><label>Collection name<input type="text" id="collectionName" maxlength="80" placeholder="e.g. rooftop_nov17"></label><button class="btn" id="collectionExport">Export test collection</button></div>
+      <p class="hint">Exports a frozen copy of manual labels and frames. Use a new name for each export.</p>
+      <div id="collectionMsg" class="mono" role="status" aria-live="polite"></div>
+      <pre id="collectionCommand" class="mono" tabindex="0" aria-label="Classification test command" hidden></pre>
+      <h3 class="sub3">Drone training set</h3>
+      <p class="hint">Uses existing drone-only labels and exported hard examples.</p>
       <div id="dsSummary" class="mono"></div>
       <div class="ctl"><button class="btn" id="dsWrite">Prepare training set</button></div>
       <div id="dsMsg" class="mono" role="status" aria-live="polite"></div>

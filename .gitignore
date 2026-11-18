@@ -5,7 +5,7 @@ __pycache__/
 .DS_Store
 
 # Data: too large for git, and the public datasets/clips have their own licenses.
-# Re-create with prepare_dut.py, prepare_negatives.py, prepare_tracking_split.py, make_web_clips.py.
+# Re-create with scripts/data/prepare_dut.py, scripts/data/prepare_negatives.py, scripts/data/prepare_tracking_split.py, scripts/review/make_web_clips.py.
 footage/
 our_data/
 bus.jpg

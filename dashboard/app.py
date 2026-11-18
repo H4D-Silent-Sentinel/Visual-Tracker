@@ -21,6 +21,7 @@ import math
 import random
 import re
 import subprocess
+import sys
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -30,6 +31,9 @@ from urllib.parse import parse_qs, unquote, urlparse
 import cv2
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+import classification_data
+
 HERE = Path(__file__).resolve().parent
 PORT = int(__import__('os').environ.get('PORT', '8000'))
 DS = Path.home() / "yolo-datasets" / "dut-anti-uav"
@@ -592,6 +596,43 @@ def label_save(d):
     return {"ok": True, "labeled_frames": len(list(ld.glob("*.txt"))) if ld.exists() else 0}
 
 
+def classification_label_save(d):
+    if not isinstance(d, dict):
+        return {"ok": False, "error": "annotation must be a JSON object"}
+    key, frame = d.get("clip"), d.get("frame")
+    clip = clip_index().get(key) if isinstance(key, str) else None
+    if not clip or type(frame) is not int or not 0 <= frame < clip["frames"]:
+        return {"ok": False, "error": "bad clip or frame"}
+    try:
+        with FILE_LOCK:
+            image_bytes = None
+            if not d.get("delete"):
+                image = read_frame(key, frame)
+                if image is None:
+                    return {"ok": False, "error": "Could not read this frame; nothing was saved."}
+                ok, encoded = cv2.imencode(".jpg", image, [cv2.IMWRITE_JPEG_QUALITY, 92])
+                if not ok:
+                    return {"ok": False, "error": "Could not encode this frame; nothing was saved."}
+                image_bytes = encoded.tobytes()
+            annotation = classification_data.save_annotation(
+                OURS, key, frame, d.get("boxes", []), d.get("object_label"),
+                d.get("split"), d.get("source_id"), image_bytes=image_bytes,
+                no_drone=d.get("no_drone", False), delete=d.get("delete", False))
+        return {"ok": True, "annotation": annotation}
+    except (ValueError, OSError) as exc:
+        return {"ok": False, "error": str(exc)}
+
+
+def collection_export(d):
+    if not isinstance(d, dict):
+        return {"ok": False, "error": "export must be a JSON object"}
+    try:
+        with FILE_LOCK:
+            return {"ok": True, **classification_data.export_collection(OURS, d.get("name"))}
+    except (ValueError, OSError) as exc:
+        return {"ok": False, "error": str(exc)}
+
+
 _models = {}
 
 
@@ -729,7 +770,7 @@ class Camera(threading.Thread):
         meta = {**rec["meta"], "date": time.strftime("%Y-%m-%d %H:%M"), "frames": rec["frames"], "seconds": round(secs, 1),
                 "camera_index": self.index}
         (d / f"{rec['name']}.json").write_text(json.dumps(meta, indent=1))
-        r = subprocess.run([str(ROOT / ".venv/bin/python"), str(ROOT / "make_web_clips.py")], capture_output=True, text=True)
+        r = subprocess.run([str(ROOT / ".venv/bin/python"), str(ROOT / "scripts/review/make_web_clips.py")], capture_output=True, text=True)
         return {"ok": True, "name": rec["name"], "clip": f"ours__{rec['name']}", "frames": rec["frames"],
                 "seconds": round(secs, 1), "web_copy": (WEB / f"ours__{rec['name']}.mp4").exists(), "log": r.stdout[-300:]}
 
@@ -774,7 +815,7 @@ class Camera(threading.Thread):
                     rec["writer"].write(frame)
                     rec["frames"] += 1
             out = frame
-            if self.overlay and not training_active():
+            if self.overlay and not rec and not training_active():
                 m = best_usable_model()
                 if m:
                     r = load_model(m).predict(frame, imgsz=960, conf=0.35, verbose=False)[0]
@@ -812,19 +853,26 @@ def coverage():
         r["seconds"] += c["frames"] / c["fps"]
         if g == "dut":
             r["labeled_frames"] += c.get("gt_frames") or 0
-        d = labels_dir(key)
-        if d.exists():
-            r["labeled_frames"] += len(list(d.glob("*.txt")))
+        own_frames = set(labels_get(key)) | set(classification_data.load_annotations(OURS, key))
+        r["labeled_frames"] += len(own_frames)
     return list(rows.values())
 
 
 def collect_payload():
     idx = clip_index()
-    labeled = {k: len(list(labels_dir(k).glob("*.txt"))) for k in idx if labels_dir(k).exists()}
+    annotations = {key: classification_data.load_annotations(OURS, key) for key in idx}
+    labeled = {key: len(set(labels_get(key)) | set(annotations[key])) for key in idx}
+    rows = [annotation for labels in annotations.values() for annotation in labels.values()]
+    splits = collections.Counter(annotation["split"] for annotation in rows)
+    classes = collections.Counter(annotation["label"] for annotation in rows if not annotation["no_drone"])
+    classification = {"frames": len(rows), "clips": sum(bool(labels) for labels in annotations.values()),
+                      "development": splits["development"], "test": splits["test"],
+                      "no_drone": sum(annotation["no_drone"] for annotation in rows), "labels": dict(classes)}
     return {"flags": flags_load(), "labeled": labeled, "coverage": coverage(), "camera": CAM.state(),
-            "cameras": camera_list(), "dataset": ours_dataset(),
+            "cameras": camera_list(), "dataset": ours_dataset(), "class_labels": list(classification_data.LABELS),
+            "classifications": {key: len(labels) for key, labels in annotations.items()}, "classification_dataset": classification,
             "ours": [k for k, c in idx.items() if c["group"] == "ours"],
-            "recordings": [{"clip": k, "name": c["name"], "seconds": round(c["frames"] / c["fps"], 1), "labeled": labeled.get(k, 0),
+            "recordings": [{"clip": k, "name": c["name"], "seconds": round(c["frames"] / c["fps"], 1), "labeled": labeled.get(k, 0), "classified": len(annotations[k]),
                             "meta": read_json(ROOT / "footage" / "ours" / f"{c['name']}.json", {})}
                            for k, c in sorted(idx.items(), reverse=True) if c["group"] == "ours"]}
 
@@ -846,6 +894,9 @@ def recording_delete(name):
             if d.exists():
                 shutil.rmtree(d)
                 removed.append(str(d.relative_to(ROOT)))
+        classification_dirs = [OURS / "classification" / kind / key for kind in ("images", "labels")]
+        removed.extend(str(directory.relative_to(ROOT)) for directory in classification_dirs if directory.exists())
+        classification_data.remove_clip_annotations(OURS, key)
         for t in THUMBS.glob(f"clip_{key}_*.jpg"):
             t.unlink()
         idx = clip_index()
@@ -982,7 +1033,10 @@ class Handler(BaseHTTPRequestHandler):
             if p == "/api/collect":
                 return self.send_json(collect_payload())
             if p == "/api/labels":
-                return self.send_json({"labels": labels_get(q.get("clip", ""))})
+                key = q.get("clip", "")
+                if key not in clip_index():
+                    return self.send_json({"labels": {}, "classifications": {}})
+                return self.send_json({"labels": labels_get(key), "classifications": classification_data.load_annotations(OURS, key)})
             if p == "/api/propose":
                 return self.send_json(propose(q.get("clip", ""), int(q.get("frame", 0))))
             if p == "/api/cam":
@@ -1018,6 +1072,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(recording_delete(d.get("name")))
             if u.path == "/api/label":
                 return self.send_json(label_save(d))
+            if u.path == "/api/classification/label":
+                return self.send_json(classification_label_save(d))
+            if u.path == "/api/collections/export":
+                return self.send_json(collection_export(d))
             if u.path == "/api/cam":
                 with CAM.lock:
                     if "index" in d:
@@ -1026,7 +1084,7 @@ class Handler(BaseHTTPRequestHandler):
                     if "overlay" in d:
                         CAM.overlay = bool(d["overlay"])
                 if d.get("action") == "start":
-                    return self.send_json(CAM.start_rec({k: str(d.get(k, ""))[:80] for k in ("location", "drone_type", "background", "notes")}))
+                    return self.send_json(CAM.start_rec({k: str(d.get(k, ""))[:80] for k in ("location", "drone_type", "background", "notes", "source_id")}))
                 if d.get("action") == "stop":
                     return self.send_json(CAM.stop_rec())
                 return self.send_json({"ok": True, **CAM.state()})

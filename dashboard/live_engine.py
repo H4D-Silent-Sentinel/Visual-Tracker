@@ -14,6 +14,7 @@ import csv
 import json
 import math
 import random
+import sys
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -25,6 +26,9 @@ import torch
 from ultralytics import YOLO
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from drone_verifier import DroneVerifier
+
 HERE = Path(__file__).resolve().parent
 PORT = 8000
 DATA = Path.home() / "yolo-datasets" / "dut-anti-uav" / "yolo"
@@ -294,12 +298,15 @@ class Engine(threading.Thread):
         srcs = list_sources()
         default = next((s for s in srcs if s.endswith("dut/video09.mp4")), srcs[0])
         self.settings = {"source": default, "model": default_model(), "conf": 0.35, "imgsz": 960,
-                         "size_m": 0.35, "hfov": 60.0, "paused": False, "tracker": "default"}
+                         "size_m": 0.35, "hfov": 60.0, "paused": False, "tracker": "default", "verify": False}
         self.restart = True
         self.models = {}
         self.jpeg = None
         self.stats = {}
         self.viewers = 0
+        self.verifier = None
+        self.primary_id = None
+        self.reset_counters()
 
     def update(self, **kw):
         with self.lock:
@@ -319,7 +326,7 @@ class Engine(threading.Thread):
                     continue
                 if k == "tracker" and v not in ("default", "hold"):
                     continue
-                if k in ("source", "model", "imgsz", "tracker") and v != cur:
+                if k in ("source", "model", "imgsz", "tracker", "verify") and v != cur:
                     self.restart = True
                 self.settings[k] = v
 
@@ -341,6 +348,15 @@ class Engine(threading.Thread):
         self.trail = collections.deque(maxlen=60)
         self.conf_hist = collections.deque(maxlen=150)
         self.fps = 0.0
+        with self.lock:
+            self.stats = {
+                'error': None, 'status': 'IDLE', 'device': DEVICE, 'settings': dict(self.settings),
+                'fps': 0.0, 'source_fps': 30.0, 'frames': 0, 'pos': 0, 'total': None,
+                'locked_pct': 0.0, 'current_lock_s': 0.0, 'longest_lock_s': 0.0,
+                'reacquisitions': 0, 'targets': [], 'primary': None, 'candidate': None,
+                'verification': {'enabled': self.settings['verify']},
+                'trail': [], 'conf_hist': [], 'frame_size': [0, 0],
+            }
 
     def run(self):
         cap, total = None, None
@@ -349,7 +365,21 @@ class Engine(threading.Thread):
                 s = dict(self.settings)
                 restart, self.restart = self.restart, False
                 idle = self.viewers == 0
+            if idle and restart:
+                if cap:
+                    cap.release()
+                    cap = None
+                with self.lock:
+                    self.restart = True
+                    self.stats = {**self.stats, 'status': 'IDLE', 'settings': s}
+                time.sleep(.2)
+                continue
             if restart:
+                if self.verifier:
+                    self.verifier.reset()
+                    if not s['verify']:
+                        self.verifier.close()
+                        self.verifier = None
                 if cap:
                     cap.release()
                 cap, fps_in, live, total = self.open_source(s["source"])
@@ -357,6 +387,9 @@ class Engine(threading.Thread):
                 model.predictor = None  # fresh tracker
                 self.reset_counters()
             if idle and not restart:  # nobody watching: don't burn the GPU (e.g. while training)
+                if self.verifier:
+                    self.verifier.close()
+                    self.verifier = None
                 if live and cap is not None and cap.isOpened():  # free the camera for the Collect tab
                     cap.release()
                     with self.lock:
@@ -387,6 +420,8 @@ class Engine(threading.Thread):
                 cap.set(cv2.CAP_PROP_POS_FRAMES, 0)  # loop the clip
                 model.predictor = None
                 self.trail.clear()
+                if self.verifier:
+                    self.verifier.reset()
                 continue
             pos = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
             classes = STOCK_DRONE_LIKE if s["model"] == "stock" else None
@@ -402,11 +437,22 @@ class Engine(threading.Thread):
                              "label": r.names[int(b.cls)], "box": [x1, y1, x2, y2],
                              "range_m": round(rng, 1) if rng else None})
             dets.sort(key=lambda d: -d["conf"])
-            primary = dets[0] if dets else None
+            if s['verify']:
+                if self.verifier is None:
+                    self.verifier = DroneVerifier()
+                self.verifier.update(frame, dets)
+                primary = next((d for d in dets if d['verification']['status'] == 'confirmed'), None)
+            else:
+                primary = dets[0] if dets else None
+            candidate = primary or (dets[0] if dets else None)
+            verification = {'enabled': s['verify'], **(candidate.get('verification', {}) if candidate else {})}
 
             self.frames += 1
             now = time.time()
             if primary:
+                if s['verify'] and primary['id'] != self.primary_id:
+                    self.trail.clear()
+                self.primary_id = primary['id']
                 if self.ever_locked and self.streak == 0:
                     self.reacq += 1
                 self.locked += 1
@@ -421,6 +467,9 @@ class Engine(threading.Thread):
             self.conf_hist.append(round(primary["conf"], 3) if primary else 0)
             lost_for = (now - self.last_seen) if self.last_seen else None
             status = "LOCKED" if primary else ("COASTING" if lost_for is not None and lost_for < 1.0 else "SEARCHING")
+            if s['verify'] and candidate and not primary:
+                status = {'rejected': 'FALSE_REVIEW', 'pending': 'REVIEWING',
+                          'error': 'VERIFY_ERROR'}.get(verification.get('status'), 'UNVERIFIED')
 
             out = frame.copy()
             pts = [(int(px * w), int(py * h)) for px, py in self.trail]
@@ -430,8 +479,18 @@ class Engine(threading.Thread):
                 x1, y1, x2, y2 = d["box"]
                 main = d is primary
                 col = TEAL if main else WHITE
-                brackets(out, x1, y1, x2, y2, col, 4 if main else 2)
-                tag = f"{d['label'].upper()} {d['conf']*100:.0f}%"
+                verdict = d.get('verification', {})
+                rejected = verdict.get('status') == 'rejected'
+                if s['verify']:
+                    col = TEAL if verdict.get('status') == 'confirmed' else (70, 90, 235) if rejected else (70, 190, 235)
+                if not rejected:
+                    brackets(out, x1, y1, x2, y2, col, 4 if main else 2)
+                if s['verify']:
+                    tag = 'DRONE NOT DETECTED' if rejected else 'DRONE DETECTED' if verdict.get('status') == 'confirmed' else verdict.get('status', 'unverified').upper()
+                    if 'label' in verdict:
+                        tag += f" ({verdict['label']})"
+                else:
+                    tag = f"{d['label'].upper()} {d['conf']*100:.0f}%"
                 if d["id"] is not None:
                     tag = f"ID {d['id']}  " + tag
                 if d["range_m"]:
@@ -458,6 +517,7 @@ class Engine(threading.Thread):
                     "current_lock_s": round(self.streak / fps_in, 1),
                     "longest_lock_s": round(self.best_streak / fps_in, 1),
                     "reacquisitions": self.reacq, "targets": dets[:5], "primary": primary,
+                    "candidate": candidate, "verification": verification,
                     "trail": [[round(x, 4), round(y, 4)] for x, y in self.trail],
                     "conf_hist": list(self.conf_hist), "frame_size": [w, h],
                 }
