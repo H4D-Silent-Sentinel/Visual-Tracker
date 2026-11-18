@@ -73,6 +73,21 @@ The supplied drone screenshot passed YOLO at both input sizes and the categorica
 
 Run the new unit/integration checks with `.venv/bin/python -m unittest discover -s tests -v`. Browser checks are in `tests/browser/`.
 
+## Collect a dataset and test false positives
+
+1. Launch `./"Start Tracker.command"` and open **Collect**. Record a clip, or select an existing one. Recording saves raw frames and pauses the preview model to reduce processing load.
+2. Choose a **source/session ID** and **Development** or **Test** split. Keep clips from the same session in one split. Draw or correct a suggested box, choose its true label, and save with **S**. Press **N** only after checking that the entire frame contains no drones.
+3. Enter a collection name and click **Export test collection**. This freezes images and manual annotations under `our_data/collections/<name>/`, with separate development/test manifests. Later edits or recording deletion leave that snapshot intact.
+4. Keep the local VLM running and execute the command displayed after export, for example:
+
+```sh
+.venv/bin/python scripts/evaluate/test_classification.py \
+  --manifest our_data/collections/flight-session-01/test.jsonl \
+  --out runs/classification_flight-session-01.json
+```
+
+The report compares YOLO-only false positives with the final VLM drone confirmations, and records class confusion, missed YOLO proposals, VLM misses, and service errors separately. Include drones plus birds, kites, aircraft, and checked no-drone frames from independent sessions; tune prompts on development data and use the test split to compare changes. Manual class labels stay separate from legacy drone-training labels, and collection images remain local and ignored by git. See [docs/candidate-classification.md](docs/candidate-classification.md) for the format and metric definitions.
+
 ## How to Run:
 
 Open Terminal and paste the following:

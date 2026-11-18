@@ -43,7 +43,7 @@ The default Qwen [chat template](https://huggingface.co/mlx-community/Qwen3.5-2B
 | [Qwen3.5-2B](https://huggingface.co/mlx-community/Qwen3.5-2B-4bit/resolve/674aaa7240b91e8012fcad5d791b7dfe5ba90207/tokenizer.json) | 9175, 9405, 7179, 9542 | 2665, 2083, 2233, 874 |
 | [Gemma 4 E2B](https://huggingface.co/mlx-community/gemma-4-e2b-it-4bit/resolve/238767527555cb75a05732a84dff5d6ba0dd6809/tokenizer.json) | 10784, 4443, 8438, 11262 | 3771, 1904, 2301, 951 |
 
-The implementation scores the exact lowercase `yes` and `no` tokens under an explicit one-word prompt, then normalizes over those two labels. The alternate variants above are not summed; changing the label mapping requires fresh calibration. This gives a **conditional label score**, not an established probability of correctness. See [vlm-confidence-research.md](vlm-confidence-research.md) for calibration and abstention. Include the exact checkpoint revision, rendered prompt, label mapping, preprocessing, and runtime version in calibration identity.
+The original binary experiment scored exact lowercase `yes` and `no` tokens. The active implementation now chooses one of 35 allowed object labels using one-token menu codes, then maps only `drone` to a positive result. It has no confidence percentage or extra confidence cutoff. [vlm-prompts.md](vlm-prompts.md) records the exact current prompt and label mapping; the confidence study remains a historical calibration experiment.
 
 Qwen's [published image processor](https://huggingface.co/mlx-community/Qwen3.5-2B-4bit/blob/674aaa7240b91e8012fcad5d791b7dfe5ba90207/preprocessor_config.json) defaults to 65,536 minimum pixels and 16,777,216 maximum pixels. **Resizing the supplied crop alone does not guarantee a 384-pixel processor budget**: minimum-area resizing can enlarge narrow crops. Bound actual processed dimensions/image-token count, including any patch rounding or padding, and do not rely on a maximum-area constraint to bound the longest edge. Interpolation adds no missing object detail.
 
@@ -57,10 +57,14 @@ The official Qwen3.5 and Qwen3.8-27B model cards specify **Apache 2.0**. Flash-N
 
 Use separated calibration and held-out clip/source splits with real distant drones, birds, kites, and ambiguous tiny targets. Evaluate the deployed crop selection, resolution, no-thinking prompt, quantization, and first-token scorer together. Compare Qwen 2B against Qwen 4B first; add Gemma E2B only if enough RAM remains. Report drone recall, false confirmations on birds/kites, precision, abstention coverage, calibration error, and results by target pixel size. Measure cold load, warm per-event p50/p95 latency, peak process/system memory, swap, and detector FPS with the VLM resident. A candidate wins only if the actual task metrics improve within the shared hardware budget.
 
-## Native smoke check (2026-11-17)
+## Original binary smoke check (2026-11-17)
 
 The pinned default model was downloaded and ran locally with the final prompt. On a **16 GiB Mac**, model loading took 6.308 seconds; two synthetic white JPEG reviews in the same resident process took 1.084 and 0.415 seconds. A 384-by-100 crop and a 1-by-384 crop both produced the bounded `image_grid_thw = [[1, 24, 24]]` (384-by-384 pixels after aspect-preserving square padding). Both selected `no`, with raw confidence 0.679 and 0.706; both remain unverified at the provisional 0.85 threshold.
 
 Recorded peaks: MLX allocation 2,286,810,394 bytes, process RSS 1,074,315,264 bytes, and macOS process memory footprint 3,584,855,232 bytes. These metrics overlap and must **not** be added together. The full local artifact is `runs/vlm_smoke.json` (ignored by Git). The real tracker CLI also completed a 12-frame synthetic video, and the dashboard HTTP endpoints passed a separate smoke check.
 
 These checks establish runtime compatibility, not drone recognition quality, sustained detector FPS, concurrent shared-GPU performance, or 8 GB system headroom. No real drone calibration or held-out flight benchmark has been performed; the recommendation remains provisional for those task metrics.
+
+## Current broad-label check
+
+The categorical scorer identified the supplied drone crop as `drone` in two resident requests taking 0.589 and 0.597 seconds. A synthetic blank crop returned `flag`: its binary result was negative, but the category itself was wrong. The current prompt therefore has a known classification limit that must be measured with the recorded collection, rather than treating a successful smoke check as an accuracy result. Peak macOS process memory footprint was 3,917,450,432 bytes on the 16 GiB test Mac; this is a scorer-only workload and does not establish 8 GB headroom with simultaneous tracking.
