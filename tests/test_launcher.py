@@ -19,6 +19,8 @@ class LauncherTests(unittest.TestCase):
             bindir = root / 'bin'
             bindir.mkdir()
             (root / '.venv/bin').mkdir(parents=True)
+            (root / 'scripts/launch').mkdir(parents=True)
+            (root / 'scripts/launch/build_native_app.sh').write_text('#!/bin/zsh\nexit 0\n')
             common = f'#!{Path(sys.executable).resolve()}\nimport os, sys, time, json\nfrom pathlib import Path\nr=Path(os.environ["CHECK_ROOT"])\n'
             programs = {
                 root / '.venv/bin/python': common + '''
@@ -47,7 +49,8 @@ sys.exit(7)
                 path.write_text(text)
                 path.chmod(0o755)
             env = {**os.environ, 'PATH': str(bindir)+os.pathsep+os.environ['PATH'],
-                   'CHECK_ROOT': folder, 'CHECK_CASE': case}
+                   'CHECK_ROOT': folder, 'CHECK_CASE': case,
+                   'VISUAL_TRACKER_NATIVE': '0' if case == 'native' else '1', 'PORT': '8001'}
             process = subprocess.Popen(['zsh', str(launcher)], cwd='/tmp', env=env,
                                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
             output = ''
@@ -73,13 +76,13 @@ sys.exit(7)
 
     def test_starts_both_services_enables_verification_and_cleans_up(self):
         opened, children, requests, _, _ = self.exercise('owned')
-        self.assertEqual(opened, 'http://localhost:8000/#live')
+        self.assertEqual(opened, 'http://localhost:8001/#live')
         self.assertEqual(len(children), 2)
         self.assertIn('/live/set?verify=true&paused=false', requests)
 
     def test_reuses_existing_services_without_claiming_their_processes(self):
         opened, children, _, _, _ = self.exercise('reuse')
-        self.assertEqual(opened, 'http://localhost:8000/#live')
+        self.assertEqual(opened, 'http://localhost:8001/#live')
         self.assertEqual(children, [])
 
     def test_failed_start_does_not_open_browser(self):
@@ -87,6 +90,13 @@ sys.exit(7)
         self.assertIsNone(opened)
         self.assertIn('Service stopped before it was ready', output)
         self.assertNotEqual(code, 0)
+
+    def test_default_launcher_requests_native_permission_before_starting_services(self):
+        opened, children, requests, _, code = self.exercise('native')
+        self.assertTrue(opened.endswith('.pid'))  # native app receives the PID-file argument
+        self.assertEqual(children, [])
+        self.assertEqual(requests, '')
+        self.assertEqual(code, 0)
 
 
 if __name__ == '__main__':

@@ -25,11 +25,16 @@ Run the commands below from the project root. The main tracker and VLM service s
 | `scripts/evaluate/` | Clip evaluation, false-alarm and tracking benchmarks, VLM calibration |
 | `scripts/review/` | Browser clip conversion and per-frame review files |
 | `scripts/train/` | `run_v3.sh` and `retest_v2.sh` training/evaluation sequences |
+| `scripts/launch/`, `native/` | Build the native Mac camera-permission launcher |
 | `tests/` | Unit tests; browser checks and screenshots are in `tests/browser/` |
 
 ## Local VLM verification
 
-For a complete run, execute `./"Start Tracker.command"` from the project root, or double-click that file. It starts the cached local VLM and dashboard, waits for readiness, and opens Live with verification enabled. Choose a camera or clip in the Live source menu. Keep the Terminal open; Ctrl-C stops only services the launcher started. Existing services are reused.
+For a complete run, execute `./"Start Tracker.command"` from the project root, or double-click that file. It opens the native **Visual Tracker** Mac app, requests camera access on the main run loop, and starts Python only after permission is granted. Then it starts the cached VLM and dashboard and opens **http://localhost:8001/#live** with verification enabled. Choose a camera or clip in Live. Quit the native app, close its window, or press Ctrl-C in the launching Terminal to stop services started by that app.
+
+The first run builds `.venv/Visual Tracker.app` with Apple's Swift command line tools (`xcode-select --install` if missing); subsequent runs reuse the signed local bundle. Safari receives an MJPEG stream and does not need camera permission for this dashboard. macOS grants access to **Visual Tracker**, which launches the camera-reading Python process. If access was previously denied, the native app offers **Open Camera Settings**; enable Visual Tracker there and relaunch. macOS does not repeat its native permission prompt after a denial.
+
+This fixes OpenCV's `can not spin main run loop from other thread` error: authorization happens in the native app before workers start, and `OPENCV_AVFOUNDATION_SKIP_AUTH=1` is passed to those workers only after access is granted. The native dashboard uses port 8001 to avoid reusing an old Terminal-launched dashboard on port 8000. Startup messages are saved in `.venv/visual-tracker-native.log`.
 
 YOLO and ByteTrack keep detecting and tracking. Optional VLM verification reviews a **new tracked flying-object candidate once**, after collecting its clearest crop for 0.5 seconds. Ordinary movement, box jitter, and elapsed time do not run the VLM again. A substantially larger/sharper view or reappearance after a lost identity is an update and can request a fresh review. Requests run in a background worker; completed verdicts are cached per track.
 
