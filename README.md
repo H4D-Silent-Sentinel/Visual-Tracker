@@ -39,6 +39,12 @@ tracker ◀───cue──── base  udp/47011   where the fused track is, 
 tracker ◀──status── base  udp/47011   sentinel-c2 heartbeat (1 Hz): link up/down, ESP32 link, nodes online
 ```
 
+**Phone as the chaser drone (chaser-1).** Choose **Phone over Wi-Fi (chaser-1)** as the Live source. The phone streams its back camera plus GPS, compass heading and tilt, so the tracker reports as `chaser-1` from wherever the phone is and whichever way it points. Walk it around like a drone; no typed-in pose needed.
+1. Phone and Mac must reach each other. The simplest way is to put the Mac on the phone's Personal Hotspot; campus Wi-Fi usually blocks device-to-device traffic.
+2. The Live panel shows an address such as `https://172.20.10.2:8443`. Open it in Safari on the phone, accept the one-time "not private" warning (the tracker makes its own certificate), and tap **Start**. Allow camera, location and motion.
+3. Hold the phone sideways, back camera toward the sky. **Pointing** on the phone should match the Compass app. If it doesn't, open **Compass correction** on the phone page: it adds about −13° for New York's magnetic declination by default, or aim at something with a known bearing and tap **Set**.
+Until the phone has a GPS fix, the base hears chaser-1 but can't place what it sees. Code: `phone_feed.py` and `dashboard/phone.html`.
+
 **No drone? Use a phone.** Tick **Phone stands in for the drone (testing)** in Live, or run `python track.py --phone-standin --base`. The tracker switches to the stock YOLO model and watches only for a cell phone, which it reports to the base as the drone, labelled `phone stand-in` so a test is never mistaken for the real thing. Distance comes from a 15 cm phone (its longer side, however it's held), and the VLM check is skipped since it would rightly say a phone isn't a drone. Hold or move a second phone in view; the phone used as the camera stays the camera.
 
 With [sentinel-c2](https://github.com/H4D-Silent-Sentinel/sentinel-c2) as the base, the side panel also shows whether the base link is up (nothing heard for 3 s = down), the state of its ESP32 receiver, and how many nodes are online and hearing the drone. While this tracker keeps updating a track, the C2 uses it to send re-acquire hints to nodes that lost the drone.

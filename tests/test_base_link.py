@@ -292,6 +292,34 @@ class LiveLoopTests(unittest.TestCase):
             engine.link.close()
             rx.close()
 
+    def test_phone_source_reports_as_chaser_from_its_own_pose(self):
+        import phone_feed
+        rx = receiver()
+        with patch.object(self.live, 'list_sources', return_value=['clip.mp4']):
+            engine = self.live.Engine()
+        engine.update(link='true', source='phone', yaw='0', cam_lat='1', cam_lon='1')  # typed pose is ignored
+        engine.link = BaseLink(f"127.0.0.1:{rx.getsockname()[1]}", "post-1", cue_port=0)
+        feed = phone_feed.feed()
+        try:
+            feed.put(b"x", {"lat": 40.8082, "lon": -73.9637, "alt_m": 3, "acc_m": 5, "heading": 135.0, "pitch": 12.0})
+            self.run_frame(engine)
+            msg = json.loads(rx.recvfrom(65535)[0])
+            self.assertEqual(msg["src"], "chaser-1")
+            self.assertEqual((msg["sensor"]["lat"], msg["sensor"]["lon"]), (40.8082, -73.9637))
+            self.assertEqual((msg["sensor"]["yaw_deg"], msg["sensor"]["pitch_deg"]), (135.0, 12.0))
+            # phone without a GPS fix: heartbeat still goes out, but with no position
+            feed.pose, feed.pose_t = {"heading": 135.0}, 0.0
+            engine.restart = True  # each run_frame is a fresh engine.run(): reopen the source
+            engine.link.last_sent = None  # skip the 1 Hz heartbeat limit
+            stats = self.run_frame(engine)
+            msg = json.loads(rx.recvfrom(65535)[0])
+            self.assertNotIn("lat", msg["sensor"])
+            self.assertIn("GPS", stats["link"]["note"])
+        finally:
+            feed.pose, feed.pose_t = {}, 0.0
+            engine.link.close()
+            rx.close()
+
     def test_link_off_closes_the_socket(self):
         with patch.object(self.live, 'list_sources', return_value=['clip.mp4']):
             engine = self.live.Engine()

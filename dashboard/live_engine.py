@@ -29,6 +29,7 @@ from ultralytics import YOLO
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from base_link import PHONE_CLASS, BaseLink, phone_range
+import phone_feed
 from drone_verifier import DroneVerifier
 
 HERE = Path(__file__).resolve().parent
@@ -49,6 +50,7 @@ REPORTS = {  # model id -> (Test 1 dir, Test 2 dir, training run)
     "v4": ("runs/false_alarms_v4", "runs/tracking_test_v4", "runs/train/dut_v4_n960"),
 }
 STOCK_DRONE_LIKE = [4, 14, 33]  # COCO airplane, bird, kite
+PHONE_SOURCE = "phone"  # a phone streaming video + GPS + heading over Wi-Fi: it plays the chaser drone (phone_feed.py)
 VIDEO_EXT = {".webm", ".mp4", ".mov", ".mkv", ".avi", ".m4v", ".ogv"}
 DEVICE = "cuda" if torch.cuda.is_available() else ("mps" if torch.backends.mps.is_available() else "cpu")
 TEAL, ORANGE, WHITE = (197, 224, 63), (61, 107, 255), (240, 240, 240)
@@ -78,7 +80,7 @@ def default_model():
 def list_sources():
     vids = [str(p.relative_to(ROOT)) for p in (ROOT / "footage").rglob("*") if p.suffix.lower() in VIDEO_EXT and "web" not in p.relative_to(ROOT).parts]
     vids.sort(key=lambda v: (0 if "/dut/" in v else 2 if "/negatives/" in v else 1, v))
-    return vids + [f"camera:{i}" for i in camera_names()]
+    return vids + [f"camera:{i}" for i in camera_names()] + [PHONE_SOURCE]
 
 
 _cams = {}
@@ -340,6 +342,7 @@ class Engine(threading.Thread):
         self.viewers = 0
         self.verifier = None
         self.link = None
+        self.link_src = None  # camera id the link started with (chaser-1 replaces it for the phone)
         self.primary_id = None
         self.reset_counters()
 
@@ -374,7 +377,13 @@ class Engine(threading.Thread):
             return {"enabled": False}
         if self.link is None:
             self.link = BaseLink()
-        self.link.publish(dets, w, h, s, t)
+        if self.link_src is None:
+            self.link_src = self.link.src
+        phone = s["source"] == PHONE_SOURCE
+        self.link.src = phone_feed.CHASER_SRC if phone else self.link_src
+        self.link.publish(dets, w, h, s, t)  # without a GPS fix the base can't place it, but still hears the heartbeat
+        if phone and not (s.get("cam_lat") or s.get("cam_lon")):
+            return {**self.link.status(s), "note": "Waiting for the phone's GPS fix: the base can't place chaser-1 yet."}
         return self.link.status(s)
 
     def get_model(self, name):
@@ -383,6 +392,9 @@ class Engine(threading.Thread):
         return self.models[name]
 
     def open_source(self, src):
+        if src == PHONE_SOURCE:
+            phone_feed.feed().start()
+            return phone_feed.PhoneCapture(phone_feed.feed()), 6.0, True, None
         cap = cv2.VideoCapture(int(src.split(":")[1]) if src.startswith("camera:") else str(ROOT / src))
         fps = cap.get(cv2.CAP_PROP_FPS)
         n = cap.get(cv2.CAP_PROP_FRAME_COUNT)
@@ -451,6 +463,14 @@ class Engine(threading.Thread):
             t0 = time.time()
             ok, frame = cap.read()
             if not ok:
+                if live and s["source"] == PHONE_SOURCE:
+                    pf = phone_feed.feed()
+                    with self.lock:
+                        self.stats = {**self.stats, "status": "WAITING_PHONE", "settings": s, "phone": pf.status(),
+                                      "error": (pf.error or f"Waiting for the phone. On it, open {pf.url} in Safari, accept the "
+                                                f"'not private' warning once, and tap Start. Phone and Mac need the same Wi-Fi "
+                                                f"(or put the Mac on the phone's hotspot).")}
+                    continue
                 if live:
                     name = camera_names().get(int(s["source"].split(":")[1]), s["source"])
                     why = ("could not be opened" if not cap.isOpened() else "is connected but sends no picture")
@@ -471,6 +491,9 @@ class Engine(threading.Thread):
                     self.verifier.reset()
                 continue
             pos = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
+            if s["source"] == PHONE_SOURCE:  # the phone moves: its own GPS/heading/tilt are the camera pose
+                pose = phone_feed.feed().live_pose()
+                s = {**s, **pose} if pose else {**s, "cam_lat": 0.0, "cam_lon": 0.0}
             standin = s["standin"]
             if standin:  # only phones; the stock COCO model is loaded on restart
                 classes = [i for i, n in model.names.items() if n == PHONE_CLASS]
@@ -571,6 +594,7 @@ class Engine(threading.Thread):
                 self.stats = {
                     "error": None,
                     "status": status, "device": DEVICE, "settings": s, "fps": round(self.fps, 1),
+                    "phone": phone_feed.feed().status() if s["source"] == PHONE_SOURCE else None,
                     "source_fps": round(fps_in, 1), "frames": self.frames, "pos": pos, "total": total,
                     "locked_pct": round(100 * self.locked / self.frames, 1),
                     "current_lock_s": round(self.streak / fps_in, 1),

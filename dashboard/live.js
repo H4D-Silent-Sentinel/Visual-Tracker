@@ -2,12 +2,12 @@
 const LV = {wired: false, sources: [], paused: false, timer: null};
 const lset = (k, v) => fetch(`/live/set?${k}=${encodeURIComponent(v)}`);
 const liveText = (id, text) => {if ($(id).textContent !== text) $(id).textContent = text};
-const lnice = s => s.replace('footage/dut/', 'Tracking: ').replace('footage/negatives/', 'No drone: ').replace('footage/ours/', 'Ours: ').replace('footage/', 'Demo: ').replace('camera:', 'Camera ');
+const lnice = s => s.replace('footage/dut/', 'Tracking: ').replace('footage/negatives/', 'No drone: ').replace('footage/ours/', 'Ours: ').replace('footage/', 'Demo: ').replace('camera:', 'Camera ').replace(/^phone$/, 'Phone over Wi-Fi (chaser-1, sends GPS + heading)');
 async function liveEnter() {
   $('lvStatus').textContent = 'STARTING (loading the model)…';
   const d = await api('/live/sources');
   LV.sources = d.sources; LV.cams = d.camera_names || {};
-  const groups = [['Tracking test videos', s => s.includes('/dut/')], ['Demo flights', s => s.startsWith('footage/') && !/\/(dut|negatives|ours)\//.test(s)], ['No drone: birds and kites', s => s.includes('/negatives/')], ['Our footage', s => s.includes('/ours/')], ['Live cameras', s => s.startsWith('camera:')]];
+  const groups = [['Tracking test videos', s => s.includes('/dut/')], ['Demo flights', s => s.startsWith('footage/') && !/\/(dut|negatives|ours)\//.test(s)], ['No drone: birds and kites', s => s.includes('/negatives/')], ['Our footage', s => s.includes('/ours/')], ['Live cameras', s => s.startsWith('camera:')], ['Phone as the chaser drone', s => s === 'phone']];
   $('lvSource').innerHTML = groups.map(([g, f]) => {const xs = d.sources.filter(f); return xs.length ? `<optgroup label="${g}">${xs.map(s => `<option value="${esc(s)}">${esc(LV.cams[s] ? LV.cams[s] + (/iphone|\(\d\) camera/i.test(LV.cams[s]) || !/macbook|facetime/i.test(LV.cams[s]) ? ' (phone)' : '') : lnice(s))}</option>`).join('')}</optgroup>` : ''}).join('');
   $('lvModel').innerHTML = d.models.map(m => `<option value="${m.id}" ${m.ok ? '' : 'disabled'}>${esc(m.label)}${m.ok ? '' : ' (not finished)'}</option>`).join('');
   if (d.training_active) $('lvNote').insertAdjacentHTML('beforeend', LV.warned ? '' : ' <span class="fa">▲ A training job is running; this view slows it down while it is open.</span>');
@@ -40,7 +40,7 @@ function liveHoldNote(t) {
 }
 function liveLeave() {$('lvImg').removeAttribute('src'); clearTimeout(LV.timer)}
 function livePause() {LV.paused = !LV.paused; $('lvPause').textContent = LV.paused ? '▶ Resume' : '❚❚ Pause'; lset('paused', LV.paused)}
-function liveStep(d) {const f = LV.sources.filter(s => !s.startsWith('camera:')); if (!f.length) return; let i = f.indexOf($('lvSource').value); i = (i + d + f.length) % f.length; $('lvSource').value = f[i]; lset('source', f[i])}
+function liveStep(d) {const f = LV.sources.filter(s => !s.startsWith('camera:') && s !== 'phone'); if (!f.length) return; let i = f.indexOf($('lvSource').value); i = (i + d + f.length) % f.length; $('lvSource').value = f[i]; lset('source', f[i])}
 function lvCanvas(c) {const r = c.getBoundingClientRect(), dpr = devicePixelRatio || 1; if (c.width !== Math.round(r.width * dpr)) {c.width = Math.round(r.width * dpr); c.height = Math.round(+c.getAttribute('height') * dpr)} return dpr}
 const LINK_FIELDS = [['lvYaw', 'yaw'], ['lvPitch', 'pitch'], ['lvLat', 'cam_lat'], ['lvLon', 'cam_lon'], ['lvAlt', 'cam_alt']];
 function liveLink(s) {
@@ -54,6 +54,10 @@ function liveLink(s) {
   const C = L.c2 || {};
   let h = C.up ? 'Base link up' : C.last_heard_s == null ? 'Base not heard yet' : `✕ Base silent for ${C.last_heard_s.toFixed(0)} s`;
   if (C.up && C.heartbeat) h += ` · ESP32 ${C.esp32} · nodes ${C.nodes_online}/${C.nodes_total} online` + (C.nodes_detecting && C.nodes_detecting.length ? `, hearing drone: ${C.nodes_detecting.join(', ')}` : '');
+  const P = s.phone;
+  if (P) h += ` · phone ${P.frames} frames` + (P.gps ? `, GPS ±${Math.round(P.gps.acc_m)} m` : ', no GPS fix yet')
+    + (P.heading != null ? `, pointing ${Math.round(P.heading)}°` : '') + (P.url ? ` · ${P.url}` : '');
+  if (L.note) h += ` · ${L.note}`;
   liveText('lvLinkC2', h);
   const c = L.cue;
   $('lvLinkBox').dataset.status = L.error ? 'rejected' : c ? 'confirmed' : 'pending';
@@ -72,7 +76,7 @@ async function liveTick() {
       const status = s.status === 'LOCKED' && !locked ? 'UNVERIFIED' : s.status;
       const verdicts = {confirmed: 'Drone detected', rejected: 'Drone not detected', pending: 'Checking for drone', uncertain: 'Unable to check', error: 'Unable to check', unverified: v.error ? 'Unable to check' : 'Checking for drone'};
       const verdict = !enabled ? 'Verification off' : !p ? 'Drone not detected' : verdicts[v.status] || 'Checking for drone';
-      const words = {LOCKED: 'Drone detected', COASTING: enabled ? verdict : 'Coasting (just lost it)', SEARCHING: enabled ? verdict : 'Searching', REVIEWING: 'Checking for drone', FALSE_REVIEW: 'Drone not detected', UNVERIFIED: verdict, VERIFY_ERROR: 'Unable to check', IDLE: 'Starting…', NO_CAMERA: 'No camera picture'};
+      const words = {LOCKED: 'Drone detected', COASTING: enabled ? verdict : 'Coasting (just lost it)', SEARCHING: enabled ? verdict : 'Searching', REVIEWING: 'Checking for drone', FALSE_REVIEW: 'Drone not detected', UNVERIFIED: verdict, VERIFY_ERROR: 'Unable to check', IDLE: 'Starting…', NO_CAMERA: 'No camera picture', WAITING_PHONE: 'Waiting for the phone'};
       const el = $('lvStatus'); el.classList.toggle('locked', locked && !s.settings.paused); liveText('lvStatus', s.settings.paused ? '❚❚ PAUSED' : (words[status] || status));
       $('lvErr').hidden = !s.error; $('lvErr').textContent = s.error ? '✕ ' + s.error : '';
       el.style.color = s.settings.paused ? 'var(--muted)' : locked ? 'var(--ok)' : status === 'FALSE_REVIEW' || status === 'SEARCHING' && !p ? 'var(--miss)' : 'var(--muted)';
