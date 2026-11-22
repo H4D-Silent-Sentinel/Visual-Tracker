@@ -21,8 +21,8 @@ ROOT = Path(__file__).resolve().parents[2]
 DS = Path.home() / "yolo-datasets/dut-anti-uav"
 FR, GT = DS / "tracking/frames/Anti-UAV-Tracking-V0", DS / "tracking/gt/Anti-UAV-Tracking-V0GT"
 WEB, REVIEW = ROOT / "footage/web", ROOT / "runs/review"
-RUNS = {"v1": "dut_n960", "v2": "dut_neg_n960", "v3": "dut_v3_n960"}
-OUTPUTS = [("v1", "v1", "default"), ("v2", "v2", "default"), ("v3", "v3", "default"), ("v2_hold", "v2", "hold"), ("v3_hold", "v3", "hold")]
+RUNS = {"v1": "dut_n960", "v2": "dut_neg_n960", "v3": "dut_v3_n960", "v4": "dut_v4_n960"}
+OUTPUTS = [("v1", "v1", "default"), ("v2", "v2", "default"), ("v3", "v3", "default"), ("v4", "v4", "default"), ("v2_hold", "v2", "hold"), ("v3_hold", "v3", "hold")]
 SIZES = [("under 16 px", 0, 16), ("16-32 px", 16, 32), ("32-64 px", 32, 64), ("over 64 px", 64, 1e9)]
 IMGSZ = 960
 

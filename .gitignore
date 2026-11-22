@@ -20,6 +20,7 @@ runs/train/*
 !runs/train/dut_n960/
 !runs/train/dut_neg_n960/
 !runs/train/dut_v3_n960/
+!runs/train/dut_v4_n960/
 runs/train/*/*
 !runs/train/*/results.csv
 !runs/train/*/args.yaml
@@ -33,6 +34,7 @@ runs/false_alarms*/*
 runs/tracking_test*/*
 !runs/tracking_test*/report.json
 !runs/review/
+!runs/drone_types_*.json
 
 # Duplicate copies macOS/iCloud makes on sync conflicts ("file 2.py")
 * 2.*

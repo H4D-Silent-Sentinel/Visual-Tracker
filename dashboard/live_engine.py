@@ -34,6 +34,7 @@ PORT = 8000
 DATA = Path.home() / "yolo-datasets" / "dut-anti-uav" / "yolo"
 THUMBS = ROOT / "runs" / "thumbs"
 MODELS = {  # id: (weights, label)
+    "v4": (ROOT / "runs/train/dut_v4_n960/weights/best.pt", "v4"),
     "v3": (ROOT / "runs/train/dut_v3_n960/weights/best.pt", "v3"),
     "v2": (ROOT / "runs/train/dut_neg_n960/weights/best.pt", "v2"),
     "v1": (ROOT / "runs/train/dut_n960/weights/best.pt", "v1"),
@@ -43,6 +44,7 @@ REPORTS = {  # model id -> (Test 1 dir, Test 2 dir, training run)
     "v1": ("runs/false_alarms", "runs/tracking_test", "runs/train/dut_n960"),
     "v2": ("runs/false_alarms_v2", "runs/tracking_test_v2", "runs/train/dut_neg_n960"),
     "v3": ("runs/false_alarms_v3", "runs/tracking_test_v3", "runs/train/dut_v3_n960"),
+    "v4": ("runs/false_alarms_v4", "runs/tracking_test_v4", "runs/train/dut_v4_n960"),
 }
 STOCK_DRONE_LIKE = [4, 14, 33]  # COCO airplane, bird, kite
 VIDEO_EXT = {".webm", ".mp4", ".mov", ".mkv", ".avi", ".m4v", ".ogv"}

@@ -48,11 +48,13 @@ MODELS = {  # id -> training run folder, label, what it was trained on
     "v1": {"run": "dut_n960", "label": "v1", "data": "5,200 drone photos"},
     "v2": {"run": "dut_neg_n960", "label": "v2", "data": "v1 + 2,100 bird/kite photos marked no drone"},
     "v3": {"run": "dut_v3_n960", "label": "v3", "data": "v2 + 2,393 frames from 10 tracking videos (cluttered backgrounds)"},
+    "v4": {"run": "dut_v4_n960", "label": "v4", "data": "v3 + 7,634 drone-type images (propeller, fixed-wing; planes, helicopters, birds as no drone) + 3,806 motion-blurred copies"},
 }
 OUTPUTS = [  # id, model, tracker, label, Test 1 report dir, Test 2 report dir
     {"id": "v1", "model": "v1", "tracker": "default", "label": "v1", "t1": "runs/false_alarms", "t2": "runs/tracking_test"},
     {"id": "v2", "model": "v2", "tracker": "default", "label": "v2", "t1": "runs/false_alarms_v2", "t2": "runs/tracking_test_v2"},
     {"id": "v3", "model": "v3", "tracker": "default", "label": "v3", "t1": "runs/false_alarms_v3", "t2": "runs/tracking_test_v3"},
+    {"id": "v4", "model": "v4", "tracker": "default", "label": "v4", "t1": "runs/false_alarms_v4", "t2": "runs/tracking_test_v4"},
     {"id": "v2_hold", "model": "v2", "tracker": "hold", "label": "v2 + hold", "t1": None, "t2": "runs/tracking_test_v2_hold"},
     {"id": "v3_hold", "model": "v3", "tracker": "hold", "label": "v3 + hold", "t1": None, "t2": "runs/tracking_test_v3_hold"},
 ]
@@ -282,7 +284,7 @@ def results_payload():
                   "trained": [f"dut__{v}" for v in (tv or [])], "held_out": held},
         "outputs": [{"id": o["id"], "label": o["label"], "model": o["model"], "tracker": o["tracker"]} for o in OUTPUTS],
         "held_out": {o["id"]: agg_tracking(rows[o["id"]]["rows"], held) if held else None for o in OUTPUTS},
-        "all20": {o["id"]: agg_tracking(rows[o["id"]]["rows"], dut) for o in OUTPUTS if o["model"] != "v3"},
+        "all20": {o["id"]: agg_tracking(rows[o["id"]]["rows"], dut) for o in OUTPUTS if o["model"] not in ("v3", "v4")},
         "held_out_clips": per_clip(held),
         "false_alarms": {o["id"]: rows[o["id"]]["t1"] for o in OUTPUTS if o["t1"]},
         "false_alarm_clips": per_clip(neg),

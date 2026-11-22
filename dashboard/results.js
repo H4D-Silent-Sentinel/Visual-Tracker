@@ -59,7 +59,7 @@ async function resultsLoad() {
   /* all 20, only for models that trained on none of them */
   const a20 = Object.entries(d.all20).filter(([, v]) => v);
   if (a20.length) h += `<h2>All 20 tracking clips (v1 and v2 only)</h2>
-  <p class="cap">v3 is left out because it trained on 10 of these clips. Same metric definitions; ${a20[0][1].frames.toLocaleString()} frames.</p>
+  <p class="cap">v3 and v4 are left out because they trained on 10 of these clips. Same metric definitions; ${a20[0][1].frames.toLocaleString()} frames.</p>
   <div class="tw"><table><tr><th>Output</th><th class="num">On target</th><th class="num">Wrong-object box</th><th class="num">ID switches</th><th class="num">Reacquire</th></tr>
   ${a20.map(([id, v]) => `<tr><td>${esc(outs.find(o => o.id === id).label)}</td><td class="num">${v.on_target_pct}%</td><td class="num">${v.false_alarm_pct}%</td><td class="num">${v.id_switches}</td><td class="num">${v.avg_reacquire_s ?? '—'} s</td></tr>`).join('')}</table></div>`;
 
@@ -75,7 +75,7 @@ async function resultsLoad() {
   </table></div>`;
 
   /* labeled precision / recall */
-  const ms = ['v1', 'v2', 'v3'];
+  const ms = ['v1', 'v2', 'v3', 'v4'];
   h += `<h2>Labeled photo test: precision and recall</h2>
   <p class="cap"><b>2,200 held-out test photos</b> (DUT Anti-UAV test split, every drone hand-marked, never trained on). Precision = when it says drone, how often it is right. Recall = share of real drones it finds. These are per-box scores on still photos, separate from the frame shares above.</p>
   <div class="tw"><table><tr><th>Model</th><th class="num">Precision</th><th class="num">Recall</th><th class="num">mAP50</th></tr>

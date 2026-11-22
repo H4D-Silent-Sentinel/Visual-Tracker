@@ -1,0 +1,38 @@
+{
+  "model": "runs/train/dut_v4_n960/weights/best.pt",
+  "conf": 0.35,
+  "imgsz": 960,
+  "types": {
+    "propeller": {
+      "images": 304,
+      "drones": 304,
+      "found": 300,
+      "found_pct": 98.7,
+      "wrong_boxes": 0,
+      "wrong_box_pct": 0.0
+    },
+    "fixed_wing": {
+      "images": 61,
+      "drones": 61,
+      "found": 61,
+      "found_pct": 100.0,
+      "wrong_boxes": 0,
+      "wrong_box_pct": 0.0
+    },
+    "plane": {
+      "images": 110,
+      "images_with_drone_box": 21,
+      "false_alarm_pct": 19.1
+    },
+    "helicopter": {
+      "images": 143,
+      "images_with_drone_box": 2,
+      "false_alarm_pct": 1.4
+    },
+    "bird": {
+      "images": 69,
+      "images_with_drone_box": 3,
+      "false_alarm_pct": 4.3
+    }
+  }
+}
