@@ -28,7 +28,7 @@ from ultralytics import YOLO
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-from base_link import BaseLink
+from base_link import PHONE_CLASS, BaseLink, phone_range
 from drone_verifier import DroneVerifier
 
 HERE = Path(__file__).resolve().parent
@@ -330,6 +330,8 @@ class Engine(threading.Thread):
                          # Silent Sentinel base link (base_link.py); camera pose: yaw = true bearing of the
                          # image centre, pitch up +, position 0/0 = let the base use its site file.
                          "link": os.environ.get("VT_LINK") == "1", "yaw": 0.0, "pitch": 0.0,
+                         # Phone stand-in: no drone available, so the stock model's "cell phone" plays the drone.
+                         "standin": os.environ.get("VT_STANDIN") == "1",
                          "cam_lat": 0.0, "cam_lon": 0.0, "cam_alt": 0.0}
         self.restart = True
         self.models = {}
@@ -359,7 +361,7 @@ class Engine(threading.Thread):
                     continue
                 if k == "tracker" and v not in ("default", "hold"):
                     continue
-                if k in ("source", "model", "imgsz", "tracker", "verify") and v != cur:
+                if k in ("source", "model", "imgsz", "tracker", "verify", "standin") and v != cur:
                     self.restart = True
                 self.settings[k] = v
 
@@ -428,7 +430,7 @@ class Engine(threading.Thread):
                 if cap:
                     cap.release()
                 cap, fps_in, live, total = self.open_source(s["source"])
-                model = self.get_model(s["model"])
+                model = self.get_model("stock" if s["standin"] else s["model"])
                 model.predictor = None  # fresh tracker
                 self.reset_counters()
             if idle and not restart:  # nobody watching: don't burn the GPU (e.g. while training)
@@ -469,7 +471,12 @@ class Engine(threading.Thread):
                     self.verifier.reset()
                 continue
             pos = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
-            classes = STOCK_DRONE_LIKE if s["model"] == "stock" else None
+            standin = s["standin"]
+            if standin:  # only phones; the stock COCO model is loaded on restart
+                classes = [i for i, n in model.names.items() if n == PHONE_CLASS]
+            else:
+                classes = STOCK_DRONE_LIKE if s["model"] == "stock" else None
+            verify = s["verify"] and not standin  # the VLM would (rightly) say a phone is not a drone
             hold = s["tracker"] == "hold"  # keep a locked drone through weak detections (see bytetrack_hold.yaml)
             r = model.track(frame, persist=True, conf=min(s["conf"], 0.08) if hold else s["conf"], imgsz=s["imgsz"], classes=classes,
                             device=DEVICE, tracker=str(ROOT / "bytetrack_hold.yaml") if hold else "bytetrack.yaml", verbose=False)[0]
@@ -477,12 +484,12 @@ class Engine(threading.Thread):
             dets = []
             for b in r.boxes:
                 x1, y1, x2, y2 = [int(v) for v in b.xyxy[0].tolist()]
-                rng = mil_range(x2 - x1, w, s["size_m"], s["hfov"])
+                rng = phone_range((x1, y1, x2, y2), w, s["hfov"]) if standin else mil_range(x2 - x1, w, s["size_m"], s["hfov"])
                 dets.append({"id": int(b.id) if b.id is not None else None, "conf": float(b.conf),
                              "label": r.names[int(b.cls)], "box": [x1, y1, x2, y2],
                              "range_m": round(rng, 1) if rng else None})
             dets.sort(key=lambda d: -d["conf"])
-            if s['verify']:
+            if verify:
                 if self.verifier is None:
                     self.verifier = DroneVerifier()
                 self.verifier.update(frame, dets)
@@ -490,12 +497,12 @@ class Engine(threading.Thread):
             else:
                 primary = dets[0] if dets else None
             candidate = primary or (dets[0] if dets else None)
-            verification = {'enabled': s['verify'], **(candidate.get('verification', {}) if candidate else {})}
+            verification = {'enabled': verify, **(candidate.get('verification', {}) if candidate else {})}
 
             self.frames += 1
             now = time.time()
             if primary:
-                if s['verify'] and primary['id'] != self.primary_id:
+                if verify and primary['id'] != self.primary_id:
                     self.trail.clear()
                 self.primary_id = primary['id']
                 if self.ever_locked and self.streak == 0:
@@ -512,7 +519,7 @@ class Engine(threading.Thread):
             self.conf_hist.append(round(primary["conf"], 3) if primary else 0)
             lost_for = (now - self.last_seen) if self.last_seen else None
             status = "LOCKED" if primary else ("COASTING" if lost_for is not None and lost_for < 1.0 else "SEARCHING")
-            if s['verify'] and candidate and not primary:
+            if verify and candidate and not primary:
                 status = {'rejected': 'FALSE_REVIEW', 'pending': 'REVIEWING',
                           'error': 'VERIFY_ERROR'}.get(verification.get('status'), 'UNVERIFIED')
 
@@ -529,14 +536,16 @@ class Engine(threading.Thread):
                 col = TEAL if main else WHITE
                 verdict = d.get('verification', {})
                 rejected = verdict.get('status') == 'rejected'
-                if s['verify']:
+                if verify:
                     col = TEAL if verdict.get('status') == 'confirmed' else (70, 90, 235) if rejected else (70, 190, 235)
                 if not rejected:
                     brackets(out, x1, y1, x2, y2, col, 4 if main else 2)
-                if s['verify']:
+                if verify:
                     tag = 'DRONE NOT DETECTED' if rejected else 'DRONE DETECTED' if verdict.get('status') == 'confirmed' else verdict.get('status', 'unverified').upper()
                     if 'label' in verdict:
                         tag += f" ({verdict['label']})"
+                elif standin:
+                    tag = f"PHONE = DRONE STAND-IN {d['conf']*100:.0f}%"
                 else:
                     tag = f"{d['label'].upper()} {d['conf']*100:.0f}%"
                 if d["id"] is not None:

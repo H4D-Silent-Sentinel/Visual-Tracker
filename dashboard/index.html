@@ -107,6 +107,7 @@
       <div class="set"><label>Drone width (m)<input type="number" id="lvSize" step="0.05" value="0.35"></label><label>Camera view (°)<input type="number" id="lvFov" step="1" value="60"></label></div>
     </div>
     <div class="ctl lv-verify-control"><label class="chk"><input type="checkbox" id="lvVerify" aria-describedby="lvVerifyNote"> Verify drones with local VLM</label><span id="lvVerifyNote">Checks new objects or meaningful appearance changes; reuses the result otherwise.</span></div>
+    <div class="ctl lv-standin-control"><label class="chk"><input type="checkbox" id="lvStandin" aria-describedby="lvStandinNote"> Phone stands in for the drone (testing)</label><span id="lvStandinNote">Watches for a cell phone with the stock model and reports it as the drone, labelled “phone stand-in”. Distance assumes a 15 cm phone. VLM check is skipped.</span></div>
     <div class="ctl lv-link-control"><label class="chk"><input type="checkbox" id="lvLink" aria-describedby="lvLinkNote"> Send to Silent Sentinel base</label><span id="lvLinkNote">Drone tracks go to the base over UDP; the base's cue is drawn on the video.</span></div>
     <div class="tele" id="lvPose" hidden>
       <div class="set"><label>Camera faces (° true)<input type="number" id="lvYaw" step="1" value="0"></label><label>Tilt up (°)<input type="number" id="lvPitch" step="1" value="0"></label></div>

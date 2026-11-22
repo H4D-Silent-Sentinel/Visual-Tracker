@@ -39,6 +39,8 @@ tracker ◀───cue──── base  udp/47011   where the fused track is, 
 tracker ◀──status── base  udp/47011   sentinel-c2 heartbeat (1 Hz): link up/down, ESP32 link, nodes online
 ```
 
+**No drone? Use a phone.** Tick **Phone stands in for the drone (testing)** in Live, or run `python track.py --phone-standin --base`. The tracker switches to the stock YOLO model and watches only for a cell phone, which it reports to the base as the drone, labelled `phone stand-in` so a test is never mistaken for the real thing. Distance comes from a 15 cm phone (its longer side, however it's held), and the VLM check is skipped since it would rightly say a phone isn't a drone. Hold or move a second phone in view; the phone used as the camera stays the camera.
+
 With [sentinel-c2](https://github.com/H4D-Silent-Sentinel/sentinel-c2) as the base, the side panel also shows whether the base link is up (nothing heard for 3 s = down), the state of its ESP32 receiver, and how many nodes are online and hearing the drone. While this tracker keeps updating a track, the C2 uses it to send re-acquire hints to nodes that lost the drone.
 
 **Dashboard:** in **Live**, tick **Send to Silent Sentinel base**, then enter where the camera faces (true bearing of the image centre, from a phone compass) and its tilt. Fill in the camera's lat/lon/height only for a camera that is *not* listed in the base's site file, or to see where cues fall relative to the camera (left/right, distance). The base's cue is drawn on the video: a dashed ring when it is in view, an edge arrow when it is not. The side panel shows messages sent, cues received, and errors. Keep the Live tab open: the tracker idles with no viewer.

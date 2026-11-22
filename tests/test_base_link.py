@@ -83,6 +83,23 @@ class MessageTests(unittest.TestCase):
         m = build_visual("p", 0, verified, FRAME_W, FRAME_H, {**CAM, "verify": True})
         self.assertEqual([t["id"] for t in m["tracks"]], [3])
 
+    def test_phone_stands_in_for_the_drone(self):
+        dets = [det(label="cell phone", conf=0.7), det(label="drone"), det(label="person")]
+        msg = build_visual("post-1", 1.0, dets, FRAME_W, FRAME_H, {**CAM, "standin": True, "verify": True})
+        self.assertEqual(len(msg["tracks"]), 1)  # only the phone, and the VLM check doesn't apply
+        tr = msg["tracks"][0]
+        self.assertEqual((tr["class"], tr["label"]), ("drone", base_link.STANDIN_LABEL))
+        plain = build_visual("post-1", 1.0, dets, FRAME_W, FRAME_H, CAM)
+        self.assertTrue(all("label" not in t or t["label"] != base_link.STANDIN_LABEL for t in plain["tracks"]))
+
+    def test_phone_range_uses_its_long_side(self):
+        # 15 cm phone filling 10% of a 60-degree view: ~1.3 m; held upright or sideways gives the same answer
+        wide = base_link.phone_range((0, 0, 128, 60), 1280, 60.0)
+        tall = base_link.phone_range((0, 0, 60, 128), 1280, 60.0)
+        self.assertAlmostEqual(wide, tall)
+        self.assertAlmostEqual(wide, 0.15 / (2 * math.tan(math.atan(0.1 * math.tan(math.radians(30))))), places=6)
+        self.assertTrue(1.2 < wide < 1.4)
+
     def test_unknown_range_is_left_out(self):
         m = build_visual("p", 0, [det(range_m=float("inf")), det(2, range_m=None)], FRAME_W, FRAME_H, CAM)
         self.assertTrue(all("range_m" not in t for t in m["tracks"]))
@@ -198,12 +215,18 @@ class LiveLoopTests(unittest.TestCase):
              patch('subprocess.run', return_value=SimpleNamespace(stderr='')):
             spec.loader.exec_module(cls.live)
 
-    def run_frame(self, engine):
+    def run_frame(self, engine, names=None, cls=0, seen=None):
         class End(Exception):
             pass
         image = np.zeros((1080, 1920, 3), np.uint8)
-        boxes = [SimpleNamespace(xyxy=[np.array([940, 500, 980, 540])], conf=.9, id=7, cls=0)]
-        model = SimpleNamespace(predictor=None, track=lambda *a, **k: [SimpleNamespace(boxes=boxes, names={0: 'drone'})])
+        names = names or {0: 'drone'}
+        boxes = [SimpleNamespace(xyxy=[np.array([940, 500, 980, 540])], conf=.9, id=7, cls=cls)]
+        seen = {} if seen is None else seen
+
+        def track(*a, **k):
+            seen['classes'] = k.get('classes')
+            return [SimpleNamespace(boxes=boxes, names=names)]
+        model = SimpleNamespace(predictor=None, names=names, track=track)
 
         class Capture:
             count = 0
@@ -216,7 +239,10 @@ class LiveLoopTests(unittest.TestCase):
             def release(self): pass
         engine.viewers = 1
         engine.open_source = lambda _: (Capture(), 30, False, 1)
-        engine.get_model = lambda _: model
+        def get_model(name):
+            seen['model'] = name
+            return model
+        engine.get_model = get_model
         with self.assertRaises(End):
             engine.run()
         return engine.stats
@@ -241,6 +267,27 @@ class LiveLoopTests(unittest.TestCase):
             self.assertTrue(stats["link"]["cue"]["in_view"])
             self.assertIsNotNone(engine.jpeg)
             json.dumps(stats)  # served to the browser as JSON
+        finally:
+            engine.link.close()
+            rx.close()
+
+    def test_phone_standin_runs_through_the_live_loop(self):
+        rx = receiver()
+        with patch.object(self.live, 'list_sources', return_value=['clip.mp4']):
+            engine = self.live.Engine()
+        engine.update(link='true', standin='true', verify='true', model='v4')
+        engine.link = BaseLink(f"127.0.0.1:{rx.getsockname()[1]}", "post-1", cue_port=0)
+        seen = {}
+        try:
+            self.run_frame(engine, names={0: 'person', 67: 'cell phone'}, cls=67, seen=seen)
+            msg = json.loads(rx.recvfrom(65535)[0])
+            self.assertEqual(seen['model'], 'stock')  # stock COCO model, whatever model was picked
+            self.assertEqual(seen['classes'], [67])  # phones only
+            tr = msg["tracks"][0]
+            self.assertEqual((tr["class"], tr["label"]), ("drone", base_link.STANDIN_LABEL))
+            # 40 px phone (15 cm long side) in a 1920 px, 60 deg view: about 6 m
+            self.assertTrue(5 < tr["range_m"] < 7, tr["range_m"])
+            self.assertIsNone(engine.verifier)  # VLM never consulted for a phone
         finally:
             engine.link.close()
             rx.close()

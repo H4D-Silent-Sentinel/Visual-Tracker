@@ -4,6 +4,7 @@ Examples:
   python track.py                         # webcam, all object types
   python track.py --source clip.mp4 --save
   python track.py --drone-like --range    # only bird/kite/airplane, show mil-relation range
+  python track.py --phone-standin --base  # no drone? a cell phone plays the drone (labelled as a stand-in)
   python track.py --model runs/train/dut_v3_n960/weights/best.pt --imgsz 960 \
       --base 192.168.1.20 --yaw 92 --pitch 5  # also send tracks to the Silent Sentinel base
 """
@@ -16,7 +17,7 @@ import cv2
 import torch
 from ultralytics import YOLO
 
-from base_link import BaseLink
+from base_link import PHONE_CLASS, PHONE_SIZE_M, BaseLink, phone_range
 from drone_verifier import DroneVerifier
 
 # COCO has no "drone" class yet; these are the closest stand-ins until we fine-tune.
@@ -35,6 +36,8 @@ def parse_args():
     p.add_argument("--hfov", type=float, default=60.0, help="camera horizontal field of view, degrees")
     p.add_argument("--save", action="store_true", help="save annotated video to runs/")
     p.add_argument("--no-show", action="store_true", help="don't open a window")
+    p.add_argument("--phone-standin", action="store_true",
+                   help="testing without a drone: track cell phones with the stock model and report them as the drone")
     p.add_argument("--verify", action="store_true", help="review new flying-object tracks with the local VLM scorer")
     p.add_argument("--base", nargs="?", const="", default=None, metavar="HOST[:PORT]",
                    help="send drone tracks to the Silent Sentinel base (default 127.0.0.1:47010, or $VT_BASE)")
@@ -67,14 +70,18 @@ def main():
     source = int(a.source) if a.source.isdigit() else a.source
     device = pick_device()
     classes = list(DRONE_LIKE.values()) if a.drone_like else None
+    if a.phone_standin:
+        a.model, a.verify, a.target_size = "yolo11n.pt", False, PHONE_SIZE_M  # stock COCO has "cell phone"
     model = YOLO(a.model)
+    if a.phone_standin:
+        classes = [cid for cid, name in model.names.items() if name == PHONE_CLASS]
     verifier = DroneVerifier() if a.verify else None
     if a.verify and classes is None:
         classes = [cid for cid, name in model.names.items() if name.lower() in {'drone', 'uav', *DRONE_LIKE}]
         if not classes:
             raise ValueError('Verification requires drone, UAV, airplane, bird, or kite model classes')
     link = BaseLink(a.base or None, a.src) if a.base is not None else None
-    link_settings = {"hfov": a.hfov, "yaw": a.yaw, "pitch": a.pitch, "verify": a.verify,
+    link_settings = {"hfov": a.hfov, "yaw": a.yaw, "pitch": a.pitch, "verify": a.verify, "standin": a.phone_standin,
                      "cam_lat": a.cam_lat, "cam_lon": a.cam_lon, "cam_alt": a.cam_alt}
     print(f"model={a.model} device={device} source={a.source}"
           + (f" base={link.addr[0]}:{link.addr[1]} src={link.src}" if link else ""))
@@ -101,7 +108,8 @@ def main():
         if link:
             for target in targets:
                 x1, _, x2, _ = target['box']
-                target['range_m'] = mil_range(x2 - x1, w, a.target_size, a.hfov)
+                target['range_m'] = (phone_range(target['box'], w, a.hfov) if a.phone_standin
+                                     else mil_range(x2 - x1, w, a.target_size, a.hfov))
             link.publish(targets, w, h, link_settings, now)
             cue = link.latest_cue(link_settings)
             if cue and "rel_az_deg" in cue:

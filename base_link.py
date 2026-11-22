@@ -29,6 +29,10 @@ SCHEMA_VERSION = 1
 VISUAL_PORT = 47010
 CUE_PORT = 47011
 DRONE_CLASSES = {"drone", "uav"}
+# Phone stand-in (testing without a drone): the stock COCO model's "cell phone" is reported as the drone.
+PHONE_CLASS = "cell phone"
+PHONE_SIZE_M = 0.15  # long side of a typical phone; used for the distance estimate
+STANDIN_LABEL = "phone stand-in"
 MAX_TRACKS = 10
 CUE_STALE_S = 5.0
 C2_TIMEOUT_S = 3.0  # no cue/status for this long = base link down
@@ -47,11 +51,25 @@ def vfov_deg(hfov: float, w: int, h: int) -> float:
     return math.degrees(2 * math.atan(math.tan(math.radians(hfov) / 2) * h / w))
 
 
-def send_targets(dets: list[dict], verify: bool) -> list[dict]:
+def phone_range(box, frame_w: int, hfov: float, size_m: float = PHONE_SIZE_M) -> float | None:
+    """Distance to a phone from its box: the longer box side is the phone's long side, whichever
+    way it is held (pinhole camera, square pixels)."""
+    x1, y1, x2, y2 = (float(v) for v in box)
+    px = max(x2 - x1, y2 - y1)
+    if px <= 0:
+        return None
+    ang = 2 * math.atan(px / frame_w * math.tan(math.radians(hfov) / 2))
+    return size_m / (2 * math.tan(ang / 2)) if ang > 0 else None
+
+
+def send_targets(dets: list[dict], verify: bool, standin: bool = False) -> list[dict]:
     """Which tracker targets go to the base.
 
-    With VLM verification on, only VLM-confirmed drones. Without it, every box the
-    detector labels as a drone (the stock COCO model has no drone class, so it sends none)."""
+    Phone stand-in: only boxes the detector calls a cell phone (VLM verification is skipped,
+    it would reject a phone). With VLM verification on, only VLM-confirmed drones. Otherwise,
+    every box the detector labels as a drone (the stock COCO model has no drone class, so it sends none)."""
+    if standin:
+        return [d for d in dets if str(d.get("label", "")).lower() == PHONE_CLASS]
     if verify:
         return [d for d in dets if d.get("verification", {}).get("status") == "confirmed"]
     return [d for d in dets if str(d.get("label", "")).lower() in DRONE_CLASSES]
@@ -71,7 +89,8 @@ def build_visual(src: str, t: float, dets: list[dict], frame_w: int, frame_h: in
     if lat or lon:
         sensor.update(lat=lat, lon=lon, alt_m=float(settings.get("cam_alt") or 0.0))
     tracks = []
-    for d in send_targets(dets, bool(settings.get("verify")))[:MAX_TRACKS]:
+    standin = bool(settings.get("standin"))
+    for d in send_targets(dets, bool(settings.get("verify")), standin)[:MAX_TRACKS]:
         x1, y1, x2, y2 = (float(v) for v in d["box"])
         x1, x2 = max(0.0, x1), min(float(frame_w), x2)
         y1, y2 = max(0.0, y1), min(float(frame_h), y2)
@@ -83,7 +102,9 @@ def build_visual(src: str, t: float, dets: list[dict], frame_w: int, frame_h: in
               # One pixel of the box width is one pixel of bearing; never claim better than 0.1 deg.
               "az_sigma_deg": round(max(0.1, hfov / frame_w), 3)}
         label = d.get("verification", {}).get("label")
-        if label:
+        if standin:
+            tr["label"] = STANDIN_LABEL  # so nobody at the C2 mistakes a test for a real drone
+        elif label:
             tr["label"] = f"{label} (VLM)"
         rng = d.get("range_m")
         if rng and math.isfinite(rng):
