@@ -20,6 +20,7 @@ async function liveEnter() {
     $('lvImgsz').onchange = e => lset('imgsz', e.target.value);
     $('lvTracker').onchange = e => {lset('tracker', e.target.value); liveHoldNote(e.target.value)};
     $('lvVerify').onchange = e => lset('verify', e.target.checked);
+    $('lvStab').onchange = e => lset('stabilize', e.target.checked);
     $('lvSize').onchange = e => lset('size_m', e.target.value);
     $('lvFov').onchange = e => lset('hfov', e.target.value);
     const b = (id, fn) => $(id).onclick = () => {fn(); $(id).blur()};
@@ -57,6 +58,7 @@ async function liveTick() {
       if (document.activeElement !== $('lvTracker') && $('lvTracker').value !== s.settings.tracker) {$('lvTracker').value = s.settings.tracker; liveHoldNote(s.settings.tracker)}
       for (const [id, k] of [['lvSource', 'source'], ['lvModel', 'model']]) if (document.activeElement !== $(id) && $(id).value !== s.settings[k]) $(id).value = s.settings[k];
       if (document.activeElement !== $('lvVerify')) $('lvVerify').checked = enabled;
+      if (document.activeElement !== $('lvStab') && 'stabilize' in s.settings) $('lvStab').checked = s.settings.stabilize;
       if (s.total) {$('lvProg').style.width = (100 * s.pos / s.total) + '%'; $('lvTime').textContent = mmss(s.pos / s.source_fps) + ' / ' + mmss(s.total / s.source_fps)} else {$('lvProg').style.width = '0'; $('lvTime').textContent = 'live'}
       liveText('lvVerdict', verdict);
       $('lvVerification').dataset.status = !enabled ? 'off' : !p ? 'rejected' : v.status || 'unverified';

@@ -102,7 +102,8 @@
     <div class="tele">
       <div><span class="k">Model</span><select id="lvModel"></select></div>
       <div style="flex:2 1 220px"><span class="k">YOLO confidence cutoff · <b id="lvConfV">0.35</b></span><input type="range" id="lvConf" min="0.05" max="0.9" step="0.05" value="0.35" aria-label="YOLO confidence cutoff" style="accent-color:var(--accent)"></div>
-      <div><span class="k">Tracker</span><select id="lvTracker"><option value="default">Default</option><option value="hold">Hold (keeps a locked drone)</option></select></div>
+      <div><span class="k">Tracker</span><select id="lvTracker"><option value="motion" selected>Moving camera (BoT-SORT, default)</option><option value="default">ByteTrack (old default)</option><option value="hold">Hold (keeps a locked drone)</option></select></div>
+      <div><span class="k">Trail</span><label class="chk"><input type="checkbox" id="lvStab" checked> Correct for camera motion</label></div>
       <div><span class="k">Image size</span><select id="lvImgsz"><option value="640">640 px (fastest)</option><option value="960" selected>960 px</option><option value="1280">1280 px (small targets)</option></select></div>
       <div class="set"><label>Drone width (m)<input type="number" id="lvSize" step="0.05" value="0.35"></label><label>Camera view (°)<input type="number" id="lvFov" step="1" value="60"></label></div>
     </div>

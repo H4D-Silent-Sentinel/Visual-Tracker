@@ -1,0 +1,85 @@
+{
+ "model": "/Users/noahcho/Documents/School/Fall 2026/Hacking 4 Defense/yolo-tracker/runs/train/dut_v3_n960/weights/best.pt",
+ "rows": [
+  {
+   "clip": "video10",
+   "tracker": "bytetrack",
+   "visible": 2191,
+   "on_target_pct": 93.4,
+   "id_switches": 48,
+   "trail_err_raw_px": 63.4,
+   "trail_err_fixed_px": 4.7,
+   "no_motion_estimate_pct": 0.0
+  },
+  {
+   "clip": "video10",
+   "tracker": "botsort_motion",
+   "visible": 2191,
+   "on_target_pct": 96.6,
+   "id_switches": 2,
+   "trail_err_raw_px": 67.7,
+   "trail_err_fixed_px": 2.0,
+   "no_motion_estimate_pct": 0.0
+  },
+  {
+   "clip": "video17",
+   "tracker": "bytetrack",
+   "visible": 578,
+   "on_target_pct": 38.2,
+   "id_switches": 78,
+   "trail_err_raw_px": 7.4,
+   "trail_err_fixed_px": 2.4,
+   "no_motion_estimate_pct": 0.1
+  },
+  {
+   "clip": "video17",
+   "tracker": "botsort_motion",
+   "visible": 578,
+   "on_target_pct": 80.3,
+   "id_switches": 16,
+   "trail_err_raw_px": 56.5,
+   "trail_err_fixed_px": 2.0,
+   "no_motion_estimate_pct": 0.1
+  },
+  {
+   "clip": "video01",
+   "tracker": "bytetrack",
+   "visible": 834,
+   "on_target_pct": 70.0,
+   "id_switches": 27,
+   "trail_err_raw_px": 57.8,
+   "trail_err_fixed_px": 86.2,
+   "no_motion_estimate_pct": 6.2
+  },
+  {
+   "clip": "video01",
+   "tracker": "botsort_motion",
+   "visible": 834,
+   "on_target_pct": 74.8,
+   "id_switches": 4,
+   "trail_err_raw_px": 60.4,
+   "trail_err_fixed_px": 78.0,
+   "no_motion_estimate_pct": 6.1
+  },
+  {
+   "clip": "video07",
+   "tracker": "bytetrack",
+   "visible": 1365,
+   "on_target_pct": 72.5,
+   "id_switches": 54,
+   "trail_err_raw_px": 56.2,
+   "trail_err_fixed_px": 37.2,
+   "no_motion_estimate_pct": 0.0
+  },
+  {
+   "clip": "video07",
+   "tracker": "botsort_motion",
+   "visible": 1365,
+   "on_target_pct": 77.4,
+   "id_switches": 12,
+   "trail_err_raw_px": 59.8,
+   "trail_err_fixed_px": 43.3,
+   "no_motion_estimate_pct": 0.1
+  }
+ ]
+}

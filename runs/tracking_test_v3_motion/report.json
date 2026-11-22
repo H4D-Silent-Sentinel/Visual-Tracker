@@ -1,0 +1,239 @@
+{
+  "model": "runs/train/dut_v3_n960/weights/best.pt",
+  "tracker": "botsort_motion.yaml",
+  "det_conf": 0.35,
+  "imgsz": 960,
+  "conf": 0.35,
+  "iou": 0.3,
+  "videos": [
+    {
+      "video": "video01",
+      "frames": 1050,
+      "drone_visible_frames": 1050,
+      "on_target_pct": 79.6,
+      "longest_lock_s": 7.2,
+      "losses_recovered": 26,
+      "avg_reacquire_s": 0.27,
+      "false_alarm_pct": 0.0,
+      "id_switches": 3
+    },
+    {
+      "video": "video02",
+      "frames": 83,
+      "drone_visible_frames": 83,
+      "on_target_pct": 100.0,
+      "longest_lock_s": 2.8,
+      "losses_recovered": 0,
+      "avg_reacquire_s": null,
+      "false_alarm_pct": 0.0,
+      "id_switches": 0
+    },
+    {
+      "video": "video03",
+      "frames": 100,
+      "drone_visible_frames": 100,
+      "on_target_pct": 100.0,
+      "longest_lock_s": 3.3,
+      "losses_recovered": 0,
+      "avg_reacquire_s": null,
+      "false_alarm_pct": 0.0,
+      "id_switches": 0
+    },
+    {
+      "video": "video04",
+      "frames": 341,
+      "drone_visible_frames": 341,
+      "on_target_pct": 96.5,
+      "longest_lock_s": 11.0,
+      "losses_recovered": 0,
+      "avg_reacquire_s": null,
+      "false_alarm_pct": 0.0,
+      "id_switches": 0
+    },
+    {
+      "video": "video05",
+      "frames": 450,
+      "drone_visible_frames": 450,
+      "on_target_pct": 96.4,
+      "longest_lock_s": 14.3,
+      "losses_recovered": 2,
+      "avg_reacquire_s": 0.27,
+      "false_alarm_pct": 0.0,
+      "id_switches": 1
+    },
+    {
+      "video": "video06",
+      "frames": 200,
+      "drone_visible_frames": 200,
+      "on_target_pct": 100.0,
+      "longest_lock_s": 6.7,
+      "losses_recovered": 0,
+      "avg_reacquire_s": null,
+      "false_alarm_pct": 0.0,
+      "id_switches": 0
+    },
+    {
+      "video": "video07",
+      "frames": 2480,
+      "drone_visible_frames": 1827,
+      "on_target_pct": 96.6,
+      "longest_lock_s": 16.1,
+      "losses_recovered": 19,
+      "avg_reacquire_s": 0.11,
+      "false_alarm_pct": 1.7,
+      "id_switches": 8
+    },
+    {
+      "video": "video08",
+      "frames": 2305,
+      "drone_visible_frames": 2072,
+      "on_target_pct": 98.0,
+      "longest_lock_s": 25.7,
+      "losses_recovered": 9,
+      "avg_reacquire_s": 0.15,
+      "false_alarm_pct": 0.6,
+      "id_switches": 3
+    },
+    {
+      "video": "video09",
+      "frames": 2500,
+      "drone_visible_frames": 1562,
+      "on_target_pct": 100.0,
+      "longest_lock_s": 52.1,
+      "losses_recovered": 0,
+      "avg_reacquire_s": null,
+      "false_alarm_pct": 4.0,
+      "id_switches": 2
+    },
+    {
+      "video": "video10",
+      "frames": 2635,
+      "drone_visible_frames": 2307,
+      "on_target_pct": 98.7,
+      "longest_lock_s": 25.3,
+      "losses_recovered": 8,
+      "avg_reacquire_s": 0.12,
+      "false_alarm_pct": 0.3,
+      "id_switches": 0
+    },
+    {
+      "video": "video11",
+      "frames": 1000,
+      "drone_visible_frames": 998,
+      "on_target_pct": 100.0,
+      "longest_lock_s": 33.3,
+      "losses_recovered": 0,
+      "avg_reacquire_s": null,
+      "false_alarm_pct": 0.2,
+      "id_switches": 0
+    },
+    {
+      "video": "video12",
+      "frames": 1485,
+      "drone_visible_frames": 1338,
+      "on_target_pct": 83.1,
+      "longest_lock_s": 24.1,
+      "losses_recovered": 23,
+      "avg_reacquire_s": 0.33,
+      "false_alarm_pct": 0.1,
+      "id_switches": 7
+    },
+    {
+      "video": "video13",
+      "frames": 1915,
+      "drone_visible_frames": 1914,
+      "on_target_pct": 99.6,
+      "longest_lock_s": 29.8,
+      "losses_recovered": 6,
+      "avg_reacquire_s": 0.04,
+      "false_alarm_pct": 0.1,
+      "id_switches": 0
+    },
+    {
+      "video": "video14",
+      "frames": 590,
+      "drone_visible_frames": 590,
+      "on_target_pct": 100.0,
+      "longest_lock_s": 19.7,
+      "losses_recovered": 0,
+      "avg_reacquire_s": null,
+      "false_alarm_pct": 0.0,
+      "id_switches": 0
+    },
+    {
+      "video": "video15",
+      "frames": 1350,
+      "drone_visible_frames": 1105,
+      "on_target_pct": 99.7,
+      "longest_lock_s": 16.4,
+      "losses_recovered": 2,
+      "avg_reacquire_s": 0.05,
+      "false_alarm_pct": 0.2,
+      "id_switches": 4
+    },
+    {
+      "video": "video16",
+      "frames": 1285,
+      "drone_visible_frames": 1285,
+      "on_target_pct": 96.3,
+      "longest_lock_s": 7.0,
+      "losses_recovered": 26,
+      "avg_reacquire_s": 0.06,
+      "false_alarm_pct": 0.9,
+      "id_switches": 2
+    },
+    {
+      "video": "video17",
+      "frames": 780,
+      "drone_visible_frames": 780,
+      "on_target_pct": 81.2,
+      "longest_lock_s": 6.7,
+      "losses_recovered": 52,
+      "avg_reacquire_s": 0.09,
+      "false_alarm_pct": 0.8,
+      "id_switches": 39
+    },
+    {
+      "video": "video18",
+      "frames": 1320,
+      "drone_visible_frames": 1281,
+      "on_target_pct": 98.7,
+      "longest_lock_s": 25.3,
+      "losses_recovered": 1,
+      "avg_reacquire_s": 0.57,
+      "false_alarm_pct": 0.0,
+      "id_switches": 1
+    },
+    {
+      "video": "video19",
+      "frames": 1300,
+      "drone_visible_frames": 1300,
+      "on_target_pct": 99.3,
+      "longest_lock_s": 34.7,
+      "losses_recovered": 2,
+      "avg_reacquire_s": 0.15,
+      "false_alarm_pct": 0.0,
+      "id_switches": 1
+    },
+    {
+      "video": "video20",
+      "frames": 1635,
+      "drone_visible_frames": 1635,
+      "on_target_pct": 100.0,
+      "longest_lock_s": 54.5,
+      "losses_recovered": 0,
+      "avg_reacquire_s": null,
+      "false_alarm_pct": 0.0,
+      "id_switches": 0
+    }
+  ],
+  "overall": {
+    "videos": 20,
+    "frames": 24804,
+    "on_target_pct": 96.3,
+    "avg_reacquire_s": 0.16,
+    "false_alarm_pct": 0.8,
+    "id_switches": 71,
+    "median_longest_lock_s": 19.7
+  }
+}

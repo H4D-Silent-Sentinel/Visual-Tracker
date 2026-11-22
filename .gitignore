@@ -35,6 +35,7 @@ runs/tracking_test*/*
 !runs/tracking_test*/report.json
 !runs/review/
 !runs/drone_types_*.json
+!runs/moving_camera_test.json
 
 # Duplicate copies macOS/iCloud makes on sync conflicts ("file 2.py")
 * 2.*
