@@ -304,7 +304,7 @@ v4 = v3 trained 10 more passes with the real-video part of [ratio1/Drone_Detecti
 | video17 (trees), on target | 80.4% | 74.6% |
 | Photo test precision / recall | 95.6% / 91.3% | 94.6% / 90.1% |
 
-v4 fixes manned aircraft but is slightly worse elsewhere, so v3 stays the default. The drone-type test (`scripts/evaluate/test_drone_types.py`) is too easy to show fixed-wing misses: both models find 100% of its fixed-wing drones.
+v4 fixes manned aircraft but is slightly worse elsewhere, so v3 stays the default. Full breakdown (data, per-clip, per-size, pass/fail): [docs/v3-to-v4.md](docs/v3-to-v4.md). The drone-type test (`scripts/evaluate/test_drone_types.py`) is too easy to show fixed-wing misses: both models find 100% of its fixed-wing drones.
 
 ## Moving camera: BoT-SORT and trail correction (Nov 22)
 
