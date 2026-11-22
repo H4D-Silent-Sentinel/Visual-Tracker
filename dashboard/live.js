@@ -22,6 +22,8 @@ async function liveEnter() {
     $('lvVerify').onchange = e => lset('verify', e.target.checked);
     $('lvSize').onchange = e => lset('size_m', e.target.value);
     $('lvFov').onchange = e => lset('hfov', e.target.value);
+    $('lvLink').onchange = e => {lset('link', e.target.checked); $('lvPose').hidden = !e.target.checked};
+    for (const [id, k] of LINK_FIELDS) $(id).onchange = e => lset(k, e.target.value);
     const b = (id, fn) => $(id).onclick = () => {fn(); $(id).blur()};
     b('lvPause', livePause); b('lvPrev', () => liveStep(-1)); b('lvNext', () => liveStep(1)); b('lvRestart', () => lset('restart', 1));
     addEventListener('keydown', e => {if (TAB !== 'live' || inControl(e)) return;
@@ -39,6 +41,22 @@ function liveLeave() {$('lvImg').removeAttribute('src'); clearTimeout(LV.timer)}
 function livePause() {LV.paused = !LV.paused; $('lvPause').textContent = LV.paused ? '▶ Resume' : '❚❚ Pause'; lset('paused', LV.paused)}
 function liveStep(d) {const f = LV.sources.filter(s => !s.startsWith('camera:')); if (!f.length) return; let i = f.indexOf($('lvSource').value); i = (i + d + f.length) % f.length; $('lvSource').value = f[i]; lset('source', f[i])}
 function lvCanvas(c) {const r = c.getBoundingClientRect(), dpr = devicePixelRatio || 1; if (c.width !== Math.round(r.width * dpr)) {c.width = Math.round(r.width * dpr); c.height = Math.round(+c.getAttribute('height') * dpr)} return dpr}
+const LINK_FIELDS = [['lvYaw', 'yaw'], ['lvPitch', 'pitch'], ['lvLat', 'cam_lat'], ['lvLon', 'cam_lon'], ['lvAlt', 'cam_alt']];
+function liveLink(s) {
+  const L = s.link || {}, st = s.settings, on = !!st.link;
+  if (document.activeElement !== $('lvLink')) $('lvLink').checked = on;
+  $('lvPose').hidden = !on;
+  for (const [id, k] of LINK_FIELDS) if (document.activeElement !== $(id) && +$(id).value !== st[k]) $(id).value = st[k];
+  if (!on) {$('lvLinkBox').dataset.status = 'off'; liveText('lvLinkState', 'Link off'); liveText('lvLinkCue', 'Turn on “Send to Silent Sentinel base” to share tracks.'); return}
+  const ago = L.last_sent_s == null ? 'nothing sent yet' : `last sent ${L.last_sent_s.toFixed(1)} s ago`;
+  liveText('lvLinkState', L.error ? '✕ ' + L.error : `Sending as ${L.src} to ${L.base} · ${L.sent} messages, ${ago}`);
+  const c = L.cue;
+  $('lvLinkBox').dataset.status = L.error ? 'rejected' : c ? 'confirmed' : 'pending';
+  let t = `No cue from the base yet (listening on udp/${L.cue_port}; ${L.cues_received} received).`;
+  if (c && c.rel_az_deg != null) t = `Base track ${c.track_id}: ${Math.abs(c.rel_az_deg).toFixed(0)}° ${c.rel_az_deg >= 0 ? 'right' : 'left'} of centre, ${Math.round(c.dist_m)} m away (±${Math.round(c.sigma_m)} m), ${c.in_view ? 'in view' : 'out of view'} · ${c.sources.join(', ')} · ${c.age_s.toFixed(1)} s old`;
+  else if (c) t = `Base track ${c.track_id} at ${c.lat.toFixed(5)}, ${c.lon.toFixed(5)} (±${Math.round(c.sigma_m)} m). ${c.note || ''}`;
+  liveText('lvLinkCue', t);
+}
 async function liveTick() {
   if (TAB !== 'live') return;
   try {
@@ -57,6 +75,7 @@ async function liveTick() {
       if (document.activeElement !== $('lvTracker') && $('lvTracker').value !== s.settings.tracker) {$('lvTracker').value = s.settings.tracker; liveHoldNote(s.settings.tracker)}
       for (const [id, k] of [['lvSource', 'source'], ['lvModel', 'model']]) if (document.activeElement !== $(id) && $(id).value !== s.settings[k]) $(id).value = s.settings[k];
       if (document.activeElement !== $('lvVerify')) $('lvVerify').checked = enabled;
+      liveLink(s);
       if (s.total) {$('lvProg').style.width = (100 * s.pos / s.total) + '%'; $('lvTime').textContent = mmss(s.pos / s.source_fps) + ' / ' + mmss(s.total / s.source_fps)} else {$('lvProg').style.width = '0'; $('lvTime').textContent = 'live'}
       liveText('lvVerdict', verdict);
       $('lvVerification').dataset.status = !enabled ? 'off' : !p ? 'rejected' : v.status || 'unverified';

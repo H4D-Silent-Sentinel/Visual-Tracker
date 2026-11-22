@@ -26,7 +26,34 @@ Run the commands below from the project root. The main tracker and VLM service s
 | `scripts/review/` | Browser clip conversion and per-frame review files |
 | `scripts/train/` | `run_v3.sh` and `retest_v2.sh` training/evaluation sequences |
 | `scripts/launch/`, `native/` | Build the native Mac camera-permission launcher |
+| `base_link.py` | UDP link to the Silent Sentinel base (send tracks, receive cues) |
 | `tests/` | Unit tests; browser checks and screenshots are in `tests/browser/` |
+
+## Connect to the Silent Sentinel base
+
+`base_link.py` connects the tracker to the Silent Sentinel base station ([silent-sentinel](https://github.com/H4D-Silent-Sentinel/silent-sentinel), spec in its `docs/jetson-interface.md`). Both directions are one JSON object per UDP datagram:
+
+```
+tracker ──visual──▶ base  udp/47010   our drone tracks (box, bearing data, rough mil range)
+tracker ◀───cue──── base  udp/47011   where the fused track is, so the camera knows where to look
+```
+
+**Dashboard:** in **Live**, tick **Send to Silent Sentinel base**, then enter where the camera faces (true bearing of the image centre, from a phone compass) and its tilt. Fill in the camera's lat/lon/height only for a camera that is *not* listed in the base's site file, or to see where cues fall relative to the camera (left/right, distance). The base's cue is drawn on the video: a dashed ring when it is in view, an edge arrow when it is not. The side panel shows messages sent, cues received, and errors. Keep the Live tab open: the tracker idles with no viewer.
+
+**Command line / Jetson:**
+
+```sh
+python track.py --model runs/train/dut_v3_n960/weights/best.pt --imgsz 960 --hfov 70 \
+    --base 192.168.1.20 --yaw 92 --pitch 5      # add --src chaser-1 --cam-lat … for a moving camera
+```
+
+Settings (environment): `VT_BASE` base address (default `127.0.0.1:47010`), `VT_SRC` our camera id in the base's site file (default `post-1`), `VT_CUE_PORT` (default 47011), `VT_LINK=1` turns the link on when the dashboard starts.
+
+What is sent: VLM-confirmed drones when verification is on, otherwise every box labelled `drone` (the stock COCO model sends nothing), at most 5 messages a second. With nothing in view an empty heartbeat goes out once a second; the base learns our IP from it and sends cues only to trackers it has heard from. Mil-relation range is sent with ±50% uncertainty because it assumes the drone's width. The base starts a new track from a camera only at confidence ≥ 0.6; lower-confidence boxes can only update an existing track.
+
+On the base side: list the camera id in the site file (`"cameras": [{"id": "post-1", "lat": …, "lon": …, "height_m": …}]`), otherwise the base rejects fixed-camera messages with `no position for sensor`, then run `python -m cuas run --site <site>.json --map`. Both machines must be on the same network with UDP 47010/47011 allowed and clocks synced (message time is Unix seconds).
+
+Checked end to end against the real base (`cuas run`, `sites/example_intersection.json`): a box at 100 m from `post-1` became a confirmed track and its cue came back 1.3 s later, 0° off centre at 100 m. Tests: `python -m unittest tests.test_base_link`.
 
 ## Local VLM verification
 

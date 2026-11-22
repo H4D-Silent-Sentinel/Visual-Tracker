@@ -4,6 +4,8 @@ Examples:
   python track.py                         # webcam, all object types
   python track.py --source clip.mp4 --save
   python track.py --drone-like --range    # only bird/kite/airplane, show mil-relation range
+  python track.py --model runs/train/dut_v3_n960/weights/best.pt --imgsz 960 \
+      --base 192.168.1.20 --yaw 92 --pitch 5  # also send tracks to the Silent Sentinel base
 """
 import argparse
 import math
@@ -14,6 +16,7 @@ import cv2
 import torch
 from ultralytics import YOLO
 
+from base_link import BaseLink
 from drone_verifier import DroneVerifier
 
 # COCO has no "drone" class yet; these are the closest stand-ins until we fine-tune.
@@ -33,6 +36,14 @@ def parse_args():
     p.add_argument("--save", action="store_true", help="save annotated video to runs/")
     p.add_argument("--no-show", action="store_true", help="don't open a window")
     p.add_argument("--verify", action="store_true", help="review new flying-object tracks with the local VLM scorer")
+    p.add_argument("--base", nargs="?", const="", default=None, metavar="HOST[:PORT]",
+                   help="send drone tracks to the Silent Sentinel base (default 127.0.0.1:47010, or $VT_BASE)")
+    p.add_argument("--src", help="camera id in the base site file (default post-1, or $VT_SRC)")
+    p.add_argument("--yaw", type=float, default=0.0, help="true bearing the camera faces, degrees")
+    p.add_argument("--pitch", type=float, default=0.0, help="camera tilt, degrees up")
+    p.add_argument("--cam-lat", type=float, default=0.0, help="camera latitude (omit for a fixed post in the site file)")
+    p.add_argument("--cam-lon", type=float, default=0.0)
+    p.add_argument("--cam-alt", type=float, default=0.0, help="camera height, meters")
     return p.parse_args()
 
 
@@ -62,7 +73,11 @@ def main():
         classes = [cid for cid, name in model.names.items() if name.lower() in {'drone', 'uav', *DRONE_LIKE}]
         if not classes:
             raise ValueError('Verification requires drone, UAV, airplane, bird, or kite model classes')
-    print(f"model={a.model} device={device} source={a.source}")
+    link = BaseLink(a.base or None, a.src) if a.base is not None else None
+    link_settings = {"hfov": a.hfov, "yaw": a.yaw, "pitch": a.pitch, "verify": a.verify,
+                     "cam_lat": a.cam_lat, "cam_lon": a.cam_lon, "cam_alt": a.cam_alt}
+    print(f"model={a.model} device={device} source={a.source}"
+          + (f" base={link.addr[0]}:{link.addr[1]} src={link.src}" if link else ""))
 
     writer, frames, t0, fps, last = None, 0, time.time(), 0.0, None
     out_dir = Path("runs")
@@ -83,6 +98,17 @@ def main():
             verifier.update(r.orig_img, targets)
         frame = r.orig_img.copy() if verifier else r.plot()
         h, w = frame.shape[:2]
+        if link:
+            for target in targets:
+                x1, _, x2, _ = target['box']
+                target['range_m'] = mil_range(x2 - x1, w, a.target_size, a.hfov)
+            link.publish(targets, w, h, link_settings, now)
+            cue = link.latest_cue(link_settings)
+            if cue and "rel_az_deg" in cue:
+                side = "R" if cue["rel_az_deg"] >= 0 else "L"
+                cv2.putText(frame, f"BASE T{cue['track_id']}: {abs(cue['rel_az_deg']):.0f} deg {side}, "
+                            f"{cue['dist_m']:.0f} m (+/-{cue['sigma_m']:.0f})", (12, 60),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 200, 255), 2)
 
         for target in targets:
             x1, y1, x2, y2 = target['box']
@@ -120,6 +146,8 @@ def main():
     elapsed = time.time() - t0
     if verifier:
         verifier.close()
+    if link:
+        link.close()
     if writer:
         writer.release()
         if frames == 1:  # single image: also save a still

@@ -11,6 +11,7 @@ Standard library only, besides the packages track.py already uses.
 """
 import collections
 import csv
+import os
 import json
 import math
 import random
@@ -27,6 +28,7 @@ from ultralytics import YOLO
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
+from base_link import BaseLink
 from drone_verifier import DroneVerifier
 
 HERE = Path(__file__).resolve().parent
@@ -117,6 +119,30 @@ def brackets(img, x1, y1, x2, y2, color, t):
     for (cx, cy, dx, dy) in [(x1, y1, 1, 1), (x2, y1, -1, 1), (x2, y2, -1, -1), (x1, y2, 1, -1)]:
         cv2.line(img, (cx, cy), (cx + dx * L, cy), color, t, cv2.LINE_AA)
         cv2.line(img, (cx, cy), (cx, cy + dy * L), color, t, cv2.LINE_AA)
+
+
+def draw_cue(img, cue, hfov, pitch):
+    """Where the base says to look: a dashed ring if the cue is in view, an edge arrow if not."""
+    h, w = img.shape[:2]
+    col = (0, 200, 255)
+    tag = f"BASE T{cue['track_id']}  {cue['dist_m']:.0f} m  +/-{cue['sigma_m']:.0f} m"
+    f = w / 2 / math.tan(math.radians(hfov) / 2)  # focal length in pixels
+    if cue["in_view"]:
+        x = int(w / 2 + f * math.tan(math.radians(cue["rel_az_deg"])))
+        el = cue["el_deg"] if cue["el_deg"] is not None else pitch
+        y = int(min(max(h / 2 - f * math.tan(math.radians(el - pitch)), 0), h - 1))
+        r = int(min(max(f * math.tan(math.radians(cue["spread_deg"] / 2)), 18), w / 3))
+        for a in range(0, 360, 20):
+            cv2.ellipse(img, (x, y), (r, r), 0, a, a + 10, col, 2, cv2.LINE_AA)
+        cv2.putText(img, tag, (max(4, x - r), max(20, y - r - 10)), cv2.FONT_HERSHEY_SIMPLEX, 0.6, col, 2, cv2.LINE_AA)
+    else:
+        right = cue["rel_az_deg"] > 0
+        x0, x1 = (w - 90, w - 20) if right else (90, 20)
+        cv2.arrowedLine(img, (x0, h // 2), (x1, h // 2), col, 5, cv2.LINE_AA, tipLength=0.5)
+        txt = f"{abs(cue['rel_az_deg']):.0f} deg {'R' if right else 'L'}  " + tag
+        (tw, _), _ = cv2.getTextSize(txt, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
+        tx = w - tw - 20 if right else 20
+        cv2.putText(img, txt, (tx, h // 2 + 36), cv2.FONT_HERSHEY_SIMPLEX, 0.6, col, 2, cv2.LINE_AA)
 
 
 def read_json(rel):
@@ -300,13 +326,18 @@ class Engine(threading.Thread):
         srcs = list_sources()
         default = next((s for s in srcs if s.endswith("dut/video09.mp4")), srcs[0])
         self.settings = {"source": default, "model": default_model(), "conf": 0.35, "imgsz": 960,
-                         "size_m": 0.35, "hfov": 60.0, "paused": False, "tracker": "default", "verify": False}
+                         "size_m": 0.35, "hfov": 60.0, "paused": False, "tracker": "default", "verify": False,
+                         # Silent Sentinel base link (base_link.py); camera pose: yaw = true bearing of the
+                         # image centre, pitch up +, position 0/0 = let the base use its site file.
+                         "link": os.environ.get("VT_LINK") == "1", "yaw": 0.0, "pitch": 0.0,
+                         "cam_lat": 0.0, "cam_lon": 0.0, "cam_alt": 0.0}
         self.restart = True
         self.models = {}
         self.jpeg = None
         self.stats = {}
         self.viewers = 0
         self.verifier = None
+        self.link = None
         self.primary_id = None
         self.reset_counters()
 
@@ -331,6 +362,18 @@ class Engine(threading.Thread):
                 if k in ("source", "model", "imgsz", "tracker", "verify") and v != cur:
                     self.restart = True
                 self.settings[k] = v
+
+    def update_link(self, s, dets, w, h, t):
+        """Send this frame's drone tracks to the Silent Sentinel base; return link status + latest cue."""
+        if not s["link"]:
+            if self.link:
+                self.link.close()
+                self.link = None
+            return {"enabled": False}
+        if self.link is None:
+            self.link = BaseLink()
+        self.link.publish(dets, w, h, s, t)
+        return self.link.status(s)
 
     def get_model(self, name):
         if name not in self.models:
@@ -357,7 +400,7 @@ class Engine(threading.Thread):
                 'locked_pct': 0.0, 'current_lock_s': 0.0, 'longest_lock_s': 0.0,
                 'reacquisitions': 0, 'targets': [], 'primary': None, 'candidate': None,
                 'verification': {'enabled': self.settings['verify']},
-                'trail': [], 'conf_hist': [], 'frame_size': [0, 0],
+                'trail': [], 'conf_hist': [], 'frame_size': [0, 0], 'link': {'enabled': False},
             }
 
     def run(self):
@@ -473,6 +516,9 @@ class Engine(threading.Thread):
                 status = {'rejected': 'FALSE_REVIEW', 'pending': 'REVIEWING',
                           'error': 'VERIFY_ERROR'}.get(verification.get('status'), 'UNVERIFIED')
 
+            link = self.update_link(s, dets, w, h, t0)
+            cue = link.get("cue")
+
             out = frame.copy()
             pts = [(int(px * w), int(py * h)) for px, py in self.trail]
             for i in range(1, len(pts)):
@@ -501,6 +547,8 @@ class Engine(threading.Thread):
                 ty = max(th + 10, y1 - 10)
                 cv2.rectangle(out, (x1, ty - th - 8), (x1 + tw + 12, ty + 6), (20, 14, 8), -1)
                 cv2.putText(out, tag, (x1 + 6, ty), cv2.FONT_HERSHEY_SIMPLEX, 0.7, col, 2, cv2.LINE_AA)
+            if cue and "rel_az_deg" in cue:
+                draw_cue(out, cue, s["hfov"], s["pitch"])
             if w > 1280:
                 out = cv2.resize(out, (1280, int(h * 1280 / w)))
             ok, buf = cv2.imencode(".jpg", out, [cv2.IMWRITE_JPEG_QUALITY, 80])
@@ -521,7 +569,7 @@ class Engine(threading.Thread):
                     "reacquisitions": self.reacq, "targets": dets[:5], "primary": primary,
                     "candidate": candidate, "verification": verification,
                     "trail": [[round(x, 4), round(y, 4)] for x, y in self.trail],
-                    "conf_hist": list(self.conf_hist), "frame_size": [w, h],
+                    "conf_hist": list(self.conf_hist), "frame_size": [w, h], "link": link,
                 }
             if not live:  # play files at real speed
                 wait = 1 / fps_in - (time.time() - t0)
