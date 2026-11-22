@@ -146,6 +146,34 @@ class LinkTests(unittest.TestCase):
         self.now[0] += base_link.CUE_STALE_S + 1
         self.assertIsNone(self.link.latest_cue(CAM))
 
+    def test_c2_status_heartbeat(self):
+        status = {"v": 1, "type": "status", "src": "sentinel-c2", "t": 1000.0, "esp32": "up",
+                  "nodes_online": 5, "nodes_total": 6, "nodes_detecting": [2], "tracks": 1, "confirmed": 1}
+        self.assertFalse(self.link.c2_status()["up"])
+        tx = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        tx.sendto(json.dumps(status).encode(), ("127.0.0.1", self.link.cue_port))
+        tx.close()
+        self.assertTrue(wait_for(lambda: self.link.c2 is not None))
+        st = self.link.status(CAM)
+        self.assertIsNone(st["error"])  # a heartbeat is not a bad cue
+        self.assertEqual(st["cues_received"], 0)
+        self.assertEqual((st["c2"]["up"], st["c2"]["esp32"], st["c2"]["nodes_online"]), (True, "up", 5))
+        self.now[0] += base_link.C2_TIMEOUT_S + 0.1
+        self.assertFalse(self.link.c2_status()["up"])  # silent base shows as down
+
+    def test_follows_the_base_that_finds_us(self):
+        old = os.environ.pop("VT_BASE", None)
+        try:
+            auto = BaseLink(None, "post-1", cue_port=0)
+            auto.on_message(b'{"v":1,"type":"status","src":"sentinel-c2"}', "10.0.0.5")
+            self.assertEqual(auto.addr, ("10.0.0.5", base_link.VISUAL_PORT))
+            auto.close()
+        finally:
+            if old is not None:
+                os.environ["VT_BASE"] = old
+        self.link.on_message(b'{"v":1,"type":"status"}', "10.0.0.5")  # explicit --base is never overridden
+        self.assertEqual(self.link.addr[0], "127.0.0.1")
+
     def test_busy_cue_port_still_sends(self):
         other = BaseLink(f"127.0.0.1:{self.rx.getsockname()[1]}", "post-2", cue_port=self.link.cue_port)
         try:

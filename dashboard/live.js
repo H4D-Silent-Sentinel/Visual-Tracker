@@ -47,9 +47,13 @@ function liveLink(s) {
   if (document.activeElement !== $('lvLink')) $('lvLink').checked = on;
   $('lvPose').hidden = !on;
   for (const [id, k] of LINK_FIELDS) if (document.activeElement !== $(id) && +$(id).value !== st[k]) $(id).value = st[k];
-  if (!on) {$('lvLinkBox').dataset.status = 'off'; liveText('lvLinkState', 'Link off'); liveText('lvLinkCue', 'Turn on “Send to Silent Sentinel base” to share tracks.'); return}
+  if (!on) {$('lvLinkBox').dataset.status = 'off'; liveText('lvLinkState', 'Link off'); liveText('lvLinkC2', ''); liveText('lvLinkCue', 'Turn on “Send to Silent Sentinel base” to share tracks.'); return}
   const ago = L.last_sent_s == null ? 'nothing sent yet' : `last sent ${L.last_sent_s.toFixed(1)} s ago`;
   liveText('lvLinkState', L.error ? '✕ ' + L.error : `Sending as ${L.src} to ${L.base} · ${L.sent} messages, ${ago}`);
+  const C = L.c2 || {};
+  let h = C.up ? 'Base link up' : C.last_heard_s == null ? 'Base not heard yet' : `✕ Base silent for ${C.last_heard_s.toFixed(0)} s`;
+  if (C.up && C.heartbeat) h += ` · ESP32 ${C.esp32} · nodes ${C.nodes_online}/${C.nodes_total} online` + (C.nodes_detecting && C.nodes_detecting.length ? `, hearing drone: ${C.nodes_detecting.join(', ')}` : '');
+  liveText('lvLinkC2', h);
   const c = L.cue;
   $('lvLinkBox').dataset.status = L.error ? 'rejected' : c ? 'confirmed' : 'pending';
   let t = `No cue from the base yet (listening on udp/${L.cue_port}; ${L.cues_received} received).`;
