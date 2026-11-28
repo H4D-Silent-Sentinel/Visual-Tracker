@@ -31,6 +31,7 @@ sys.path.insert(0, str(ROOT))
 from base_link import PHONE_CLASS, BaseLink, phone_range
 import phone_feed
 from drone_verifier import DroneVerifier
+from camera_motion import CameraMotion, apply as move_points
 
 HERE = Path(__file__).resolve().parent
 PORT = 8000
@@ -328,7 +329,8 @@ class Engine(threading.Thread):
         srcs = list_sources()
         default = next((s for s in srcs if s.endswith("dut/video09.mp4")), srcs[0])
         self.settings = {"source": default, "model": default_model(), "conf": 0.35, "imgsz": 960,
-                         "size_m": 0.35, "hfov": 60.0, "paused": False, "tracker": "default", "verify": False,
+                         "size_m": 0.35, "hfov": 60.0, "paused": False, "tracker": "motion", "verify": False,
+                         "stabilize": True,
                          # Silent Sentinel base link (base_link.py); camera pose: yaw = true bearing of the
                          # image centre, pitch up +, position 0/0 = let the base use its site file.
                          "link": os.environ.get("VT_LINK") == "1", "yaw": 0.0, "pitch": 0.0,
@@ -362,7 +364,7 @@ class Engine(threading.Thread):
                     v = float(v)
                 if k == "model" and not model_ok(v):
                     continue
-                if k == "tracker" and v not in ("default", "hold"):
+                if k == "tracker" and v not in ("default", "hold", "motion"):
                     continue
                 if k in ("source", "model", "imgsz", "tracker", "verify", "standin") and v != cur:
                     self.restart = True
@@ -405,6 +407,8 @@ class Engine(threading.Thread):
         self.ever_locked = False
         self.last_seen = None
         self.trail = collections.deque(maxlen=60)
+        self.cam = CameraMotion()
+        self.cam_shift = 0.0
         self.conf_hist = collections.deque(maxlen=150)
         self.fps = 0.0
         with self.lock:
@@ -487,6 +491,7 @@ class Engine(threading.Thread):
                 cap.set(cv2.CAP_PROP_POS_FRAMES, 0)  # loop the clip
                 model.predictor = None
                 self.trail.clear()
+                self.cam.reset()
                 if self.verifier:
                     self.verifier.reset()
                 continue
@@ -501,9 +506,17 @@ class Engine(threading.Thread):
                 classes = STOCK_DRONE_LIKE if s["model"] == "stock" else None
             verify = s["verify"] and not standin  # the VLM would (rightly) say a phone is not a drone
             hold = s["tracker"] == "hold"  # keep a locked drone through weak detections (see bytetrack_hold.yaml)
+            tracker = {"hold": str(ROOT / "bytetrack_hold.yaml"), "motion": str(ROOT / "botsort_motion.yaml")}.get(s["tracker"], "bytetrack.yaml")
             r = model.track(frame, persist=True, conf=min(s["conf"], 0.08) if hold else s["conf"], imgsz=s["imgsz"], classes=classes,
-                            device=DEVICE, tracker=str(ROOT / "bytetrack_hold.yaml") if hold else "bytetrack.yaml", verbose=False)[0]
+                            device=DEVICE, tracker=tracker, verbose=False)[0]
             h, w = frame.shape[:2]
+            # camera motion: shift the old trail points by how the whole picture moved, so the trail
+            # follows the drone's real path instead of the camera's (see camera_motion.py)
+            cam_m = self.cam.update(frame, [b.xyxy[0].tolist() for b in r.boxes]) if s["stabilize"] else None
+            self.cam_shift = float((cam_m[0, 2] ** 2 + cam_m[1, 2] ** 2) ** 0.5) if cam_m is not None else 0.0
+            if cam_m is not None and self.trail:
+                moved = move_points(cam_m, [(px * w, py * h) for px, py in self.trail])
+                self.trail = collections.deque(((x / w, y / h) for x, y in moved), maxlen=60)
             dets = []
             for b in r.boxes:
                 x1, y1, x2, y2 = [int(v) for v in b.xyxy[0].tolist()]
@@ -602,6 +615,7 @@ class Engine(threading.Thread):
                     "reacquisitions": self.reacq, "targets": dets[:5], "primary": primary,
                     "candidate": candidate, "verification": verification,
                     "trail": [[round(x, 4), round(y, 4)] for x, y in self.trail],
+                    "camera_shift_px": round(self.cam_shift, 1),
                     "conf_hist": list(self.conf_hist), "frame_size": [w, h], "link": link,
                 }
             if not live:  # play files at real speed

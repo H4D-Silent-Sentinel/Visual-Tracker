@@ -326,3 +326,46 @@ Because v3 trained on 10 tracking clips, **tracking is compared only on the othe
 - v3 undid v2's rise in wrong-object boxes and has the fewest ID switches.
 - The hold tracker trades about 1.5-2 points of on-target time for roughly 5x the wrong-object boxes, on every model.
 - Default model in the dashboard is now v3. Next step for trees: our own rooftop footage, and a tracker that holds a drone without locking onto other objects.
+
+## v4: retrained with drone types, aircraft and motion blur (Nov 21)
+
+v4 = v3 trained 10 more passes with the real-video part of [ratio1/Drone_Detection_Survaillance](https://huggingface.co/datasets/ratio1/Drone_Detection_Survaillance) (CC BY-NC 4.0): propeller and fixed-wing drones as "drone"; planes, helicopters and birds as "no drone"; plus motion-blurred copies of a quarter of the training images. Rebuild: `scripts/data/prepare_ratio1.py`, `scripts/data/prepare_blur.py`; full run: `scripts/train/run_v4.sh`. Weights: `runs/train/dut_v4_n960/weights/best.pt`.
+
+| Test | v3 | v4 |
+|---|---|---|
+| Planes boxed as drone (110 images) | 41.8% | 19.1% |
+| Helicopters boxed as drone (143) | 26.6% | 1.4% |
+| Close-up birds boxed as drone (69) | 44.9% | 4.3% |
+| Bird/kite clips, false alarms (0.35) | 1.8% | 1.9% |
+| Held-out tracking, on target | 93.3% | 93.0% |
+| Held-out tracking, wrong-object boxes | 1.0% | 2.2% |
+| video17 (trees), on target | 80.4% | 74.6% |
+| Photo test precision / recall | 95.6% / 91.3% | 94.6% / 90.1% |
+
+v4 fixes manned aircraft but is slightly worse elsewhere, so v3 stays the default. Full breakdown (data, per-clip, per-size, pass/fail): [docs/v3-to-v4.md](docs/v3-to-v4.md). The drone-type test (`scripts/evaluate/test_drone_types.py`) is too easy to show fixed-wing misses: both models find 100% of its fixed-wing drones.
+
+## Moving camera: BoT-SORT and trail correction (Nov 22)
+
+A hand-held phone or a camera on a moving drone shifts the whole picture every frame. ByteTrack predicts each drone's next position assuming a still camera, and the orange trail recorded raw screen positions, so both followed the camera instead of the drone.
+
+- **`botsort_motion.yaml`**: BoT-SORT with camera-motion compensation (sparse optical flow). Now the default tracker in Live ("Moving camera").
+- **`camera_motion.py`**: estimates the frame-to-frame shift/rotation/scale from background corners (the drone's box is skipped, RANSAC rejects other movers) and moves the old trail points with it. Live: "Correct for camera motion" (on by default).
+- **`scripts/evaluate/test_moving_camera.py`**: simulates a pan, tilt and hand shake by moving a crop window over held-out clips (true boxes shifted the same way) and compares trackers and trail error.
+
+v3 on the 10 held-out clips, real footage (`scripts/evaluate/test_tracking.py --tracker botsort_motion.yaml`):
+
+| | ByteTrack | BoT-SORT + camera correction |
+|---|---|---|
+| On target | 93.3% | 94.3% |
+| ID switches | 120 | 63 |
+| Wrong-object boxes | 1.0% | 1.1% |
+| video07 (source camera moves) | 92.7% | 96.6% |
+
+Simulated camera motion (`runs/moving_camera_test.json`):
+
+| Clip | ByteTrack | BoT-SORT | Trail error, raw → corrected |
+|---|---|---|---|
+| video10 | 93.4%, 48 ID switches | 96.6%, 2 ID switches | 63 px → 2–5 px |
+| video17 (trees) | 38.2%, 78 ID switches | 80.3%, 16 ID switches | 7–57 px → 2 px |
+
+Trail error is only meaningful on clips whose original camera was still (video10, video17); video01 and video07 already pan in the source footage. Next: confirm on our own iPhone pan/walk clips.

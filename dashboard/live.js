@@ -21,6 +21,7 @@ async function liveEnter() {
     $('lvTracker').onchange = e => {lset('tracker', e.target.value); liveHoldNote(e.target.value)};
     $('lvVerify').onchange = e => lset('verify', e.target.checked);
     $('lvStandin').onchange = e => lset('standin', e.target.checked);
+    $('lvStab').onchange = e => lset('stabilize', e.target.checked);
     $('lvSize').onchange = e => lset('size_m', e.target.value);
     $('lvFov').onchange = e => lset('hfov', e.target.value);
     $('lvLink').onchange = e => {lset('link', e.target.checked); $('lvPose').hidden = !e.target.checked};
@@ -85,6 +86,7 @@ async function liveTick() {
       for (const [id, k] of [['lvSource', 'source'], ['lvModel', 'model']]) if (document.activeElement !== $(id) && $(id).value !== s.settings[k]) $(id).value = s.settings[k];
       if (document.activeElement !== $('lvVerify')) $('lvVerify').checked = enabled;
       if (document.activeElement !== $('lvStandin')) $('lvStandin').checked = !!s.settings.standin;
+      if (document.activeElement !== $('lvStab') && 'stabilize' in s.settings) $('lvStab').checked = s.settings.stabilize;
       liveLink(s);
       if (s.total) {$('lvProg').style.width = (100 * s.pos / s.total) + '%'; $('lvTime').textContent = mmss(s.pos / s.source_fps) + ' / ' + mmss(s.total / s.source_fps)} else {$('lvProg').style.width = '0'; $('lvTime').textContent = 'live'}
       liveText('lvVerdict', verdict);
