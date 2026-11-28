@@ -4,12 +4,14 @@ Spec: silent-sentinel/docs/jetson-interface.md (v1). One JSON object per UDP dat
 
   tracker -> base   "visual"  our tracks as camera boxes          base udp/47010
   base -> tracker   "cue"     where the fused track says the drone is   our udp/47011
+  base -> tracker   "status"  C2 heartbeat, ~1 Hz (sentinel-c2): link health + node network state
 
 The base learns our IP from the visual messages, so we send a heartbeat (empty
 `tracks`) once a second even when nothing is in view; otherwise cues never arrive.
 
 Configuration (environment, all optional):
-  VT_BASE      base address, host[:port]          default 127.0.0.1:47010
+  VT_BASE      base address, host[:port]          default: whoever sends us a cue/status
+                                                    (127.0.0.1:47010 until then)
   VT_SRC       our camera id in the base site file   default post-1
   VT_CUE_PORT  port we listen on for cues            default 47011
 Standard library only, so it runs unchanged on the Jetson.
@@ -27,8 +29,13 @@ SCHEMA_VERSION = 1
 VISUAL_PORT = 47010
 CUE_PORT = 47011
 DRONE_CLASSES = {"drone", "uav"}
+# Phone stand-in (testing without a drone): the stock COCO model's "cell phone" is reported as the drone.
+PHONE_CLASS = "cell phone"
+PHONE_SIZE_M = 0.15  # long side of a typical phone; used for the distance estimate
+STANDIN_LABEL = "phone stand-in"
 MAX_TRACKS = 10
 CUE_STALE_S = 5.0
+C2_TIMEOUT_S = 3.0  # no cue/status for this long = base link down
 M_PER_DEG_LAT = 110_540.0
 M_PER_DEG_LON = 111_320.0
 
@@ -44,11 +51,25 @@ def vfov_deg(hfov: float, w: int, h: int) -> float:
     return math.degrees(2 * math.atan(math.tan(math.radians(hfov) / 2) * h / w))
 
 
-def send_targets(dets: list[dict], verify: bool) -> list[dict]:
+def phone_range(box, frame_w: int, hfov: float, size_m: float = PHONE_SIZE_M) -> float | None:
+    """Distance to a phone from its box: the longer box side is the phone's long side, whichever
+    way it is held (pinhole camera, square pixels)."""
+    x1, y1, x2, y2 = (float(v) for v in box)
+    px = max(x2 - x1, y2 - y1)
+    if px <= 0:
+        return None
+    ang = 2 * math.atan(px / frame_w * math.tan(math.radians(hfov) / 2))
+    return size_m / (2 * math.tan(ang / 2)) if ang > 0 else None
+
+
+def send_targets(dets: list[dict], verify: bool, standin: bool = False) -> list[dict]:
     """Which tracker targets go to the base.
 
-    With VLM verification on, only VLM-confirmed drones. Without it, every box the
-    detector labels as a drone (the stock COCO model has no drone class, so it sends none)."""
+    Phone stand-in: only boxes the detector calls a cell phone (VLM verification is skipped,
+    it would reject a phone). With VLM verification on, only VLM-confirmed drones. Otherwise,
+    every box the detector labels as a drone (the stock COCO model has no drone class, so it sends none)."""
+    if standin:
+        return [d for d in dets if str(d.get("label", "")).lower() == PHONE_CLASS]
     if verify:
         return [d for d in dets if d.get("verification", {}).get("status") == "confirmed"]
     return [d for d in dets if str(d.get("label", "")).lower() in DRONE_CLASSES]
@@ -68,7 +89,8 @@ def build_visual(src: str, t: float, dets: list[dict], frame_w: int, frame_h: in
     if lat or lon:
         sensor.update(lat=lat, lon=lon, alt_m=float(settings.get("cam_alt") or 0.0))
     tracks = []
-    for d in send_targets(dets, bool(settings.get("verify")))[:MAX_TRACKS]:
+    standin = bool(settings.get("standin"))
+    for d in send_targets(dets, bool(settings.get("verify")), standin)[:MAX_TRACKS]:
         x1, y1, x2, y2 = (float(v) for v in d["box"])
         x1, x2 = max(0.0, x1), min(float(frame_w), x2)
         y1, y2 = max(0.0, y1), min(float(frame_h), y2)
@@ -80,7 +102,9 @@ def build_visual(src: str, t: float, dets: list[dict], frame_w: int, frame_h: in
               # One pixel of the box width is one pixel of bearing; never claim better than 0.1 deg.
               "az_sigma_deg": round(max(0.1, hfov / frame_w), 3)}
         label = d.get("verification", {}).get("label")
-        if label:
+        if standin:
+            tr["label"] = STANDIN_LABEL  # so nobody at the C2 mistakes a test for a real drone
+        elif label:
             tr["label"] = f"{label} (VLM)"
         rng = d.get("range_m")
         if rng and math.isfinite(rng):
@@ -91,8 +115,18 @@ def build_visual(src: str, t: float, dets: list[dict], frame_w: int, frame_h: in
     return {"v": SCHEMA_VERSION, "type": "visual", "src": src, "t": round(t, 3), "sensor": sensor, "tracks": tracks}
 
 
-def parse_cue(raw: bytes | str) -> dict:
+def parse_message(raw: bytes | str) -> dict:
+    """A v1 message from the base: a validated `cue`, or a `status` heartbeat."""
     m = json.loads(raw)
+    if not isinstance(m, dict) or m.get("v") != SCHEMA_VERSION:
+        raise ValueError("not a v1 message")
+    if m.get("type") == "status":
+        return m
+    return parse_cue(m)
+
+
+def parse_cue(raw: bytes | str | dict) -> dict:
+    m = raw if isinstance(raw, dict) else json.loads(raw)
     if m.get("v") != SCHEMA_VERSION or m.get("type") != "cue":
         raise ValueError("not a v1 cue message")
     for k in ("track_id", "lat", "lon"):
@@ -134,7 +168,9 @@ class BaseLink:
 
     def __init__(self, base_addr: str | None = None, src: str | None = None, cue_port: int | None = None,
                  rate_hz: float = 5.0, heartbeat_s: float = 1.0, clock=time.time):
-        self.addr = parse_addr(base_addr or os.environ.get("VT_BASE"))
+        given = base_addr or os.environ.get("VT_BASE")
+        self.addr = parse_addr(given)
+        self.auto_addr = not given  # follow the base that talks to us
         self.src = src or os.environ.get("VT_SRC", "post-1")
         self.cue_port = int(cue_port if cue_port is not None else os.environ.get("VT_CUE_PORT", CUE_PORT))
         self.min_dt, self.heartbeat_s, self.clock = 1 / rate_hz, heartbeat_s, clock
@@ -145,6 +181,9 @@ class BaseLink:
         self.cue_error = None
         self.cues: dict[int, tuple[float, dict]] = {}  # track_id -> (received at, cue)
         self.cues_received = 0
+        self.c2: dict | None = None  # latest `status` heartbeat from the C2
+        self.c2_heard: float | None = None  # when we last heard anything from the base
+        self.c2_up = False
         self.tx = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.rx = None
         self.closed = False
@@ -180,20 +219,30 @@ class BaseLink:
     def _listen(self):
         while not self.closed:
             try:
-                data, _ = self.rx.recvfrom(65535)
+                data, (ip, _) = self.rx.recvfrom(65535)
             except socket.timeout:
                 continue
             except OSError:
                 return
-            try:
-                cue = parse_cue(data)
-            except (ValueError, KeyError) as e:
-                self.cue_error = f"Bad cue: {e}"
-                continue
-            with self.lock:
-                self.cues[cue["track_id"]] = (self.clock(), cue)
+            self.on_message(data, ip)
+
+    def on_message(self, data: bytes, ip: str | None = None):
+        try:
+            m = parse_message(data)
+        except (ValueError, KeyError, TypeError) as e:
+            self.cue_error = f"Bad message from base: {e}"
+            return
+        now = self.clock()
+        with self.lock:
+            self.c2_heard = now
+            if m["type"] == "status":
+                self.c2 = m
+            else:
+                self.cues[m["track_id"]] = (now, m)
                 self.cues_received += 1
-                self.cue_error = None
+            self.cue_error = None
+            if self.auto_addr and ip and self.addr[0] != ip:
+                self.addr = (ip, VISUAL_PORT)  # the C2 found us (broadcast or cue): report back to it
 
     def latest_cue(self, settings: dict) -> dict | None:
         """Hint for the freshest confirmed cue (smallest uncertainty if several), or None."""
@@ -207,12 +256,32 @@ class BaseLink:
         rt, cue = min(live, key=lambda rc: (rc[1].get("sigma_m") or 0.0, -rc[0]))
         return cue_hint(cue, now - rt, settings)
 
+    def link_up(self) -> bool:
+        """True while the base has sent us a cue or status within C2_TIMEOUT_S."""
+        with self.lock:
+            up = self.c2_heard is not None and self.clock() - self.c2_heard < C2_TIMEOUT_S
+            self.c2_up = up
+            return up
+
+    def c2_status(self) -> dict:
+        """Base link health plus what the C2 reports about the ESP32 node network."""
+        up = self.link_up()
+        with self.lock:
+            c2 = dict(self.c2 or {})
+            heard = self.c2_heard
+        out = {"up": up, "last_heard_s": None if heard is None else round(self.clock() - heard, 1),
+               "heartbeat": bool(c2)}
+        for k in ("esp32", "nodes_online", "nodes_total", "nodes_detecting", "tracks", "confirmed", "hints_sent"):
+            if k in c2:
+                out[k] = c2[k]
+        return out
+
     def status(self, settings: dict) -> dict:
         now = self.clock()
         return {"enabled": True, "base": f"{self.addr[0]}:{self.addr[1]}", "src": self.src,
                 "cue_port": self.cue_port, "sent": self.sent, "cues_received": self.cues_received,
                 "last_sent_s": None if self.last_sent is None else round(now - self.last_sent, 1),
-                "error": self.error or self.cue_error, "cue": self.latest_cue(settings)}
+                "error": self.error or self.cue_error, "cue": self.latest_cue(settings), "c2": self.c2_status()}
 
     def close(self):
         self.closed = True

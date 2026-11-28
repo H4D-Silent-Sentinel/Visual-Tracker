@@ -36,7 +36,18 @@ Run the commands below from the project root. The main tracker and VLM service s
 ```
 tracker ──visual──▶ base  udp/47010   our drone tracks (box, bearing data, rough mil range)
 tracker ◀───cue──── base  udp/47011   where the fused track is, so the camera knows where to look
+tracker ◀──status── base  udp/47011   sentinel-c2 heartbeat (1 Hz): link up/down, ESP32 link, nodes online
 ```
+
+**Phone as the chaser drone (chaser-1).** Choose **Phone over Wi-Fi (chaser-1)** as the Live source. The phone streams its back camera plus GPS, compass heading and tilt, so the tracker reports as `chaser-1` from wherever the phone is and whichever way it points. Walk it around like a drone; no typed-in pose needed.
+1. Phone and Mac must reach each other. The simplest way is to put the Mac on the phone's Personal Hotspot; campus Wi-Fi usually blocks device-to-device traffic.
+2. The Live panel shows an address such as `https://172.20.10.2:8443`. Open it in Safari on the phone, accept the one-time "not private" warning (the tracker makes its own certificate), and tap **Start**. Allow camera, location and motion.
+3. Hold the phone sideways, back camera toward the sky. **Pointing** on the phone should match the Compass app. If it doesn't, open **Compass correction** on the phone page: it adds about −13° for New York's magnetic declination by default, or aim at something with a known bearing and tap **Set**.
+Until the phone has a GPS fix, the base hears chaser-1 but can't place what it sees. Code: `phone_feed.py` and `dashboard/phone.html`.
+
+**No drone? Use a phone.** Tick **Phone stands in for the drone (testing)** in Live, or run `python track.py --phone-standin --base`. The tracker switches to the stock YOLO model and watches only for a cell phone, which it reports to the base as the drone, labelled `phone stand-in` so a test is never mistaken for the real thing. Distance comes from a 15 cm phone (its longer side, however it's held), and the VLM check is skipped since it would rightly say a phone isn't a drone. Hold or move a second phone in view; the phone used as the camera stays the camera.
+
+With [sentinel-c2](https://github.com/H4D-Silent-Sentinel/sentinel-c2) as the base, the side panel also shows whether the base link is up (nothing heard for 3 s = down), the state of its ESP32 receiver, and how many nodes are online and hearing the drone. While this tracker keeps updating a track, the C2 uses it to send re-acquire hints to nodes that lost the drone.
 
 **Dashboard:** in **Live**, tick **Send to Silent Sentinel base**, then enter where the camera faces (true bearing of the image centre, from a phone compass) and its tilt. Fill in the camera's lat/lon/height only for a camera that is *not* listed in the base's site file, or to see where cues fall relative to the camera (left/right, distance). The base's cue is drawn on the video: a dashed ring when it is in view, an edge arrow when it is not. The side panel shows messages sent, cues received, and errors. Keep the Live tab open: the tracker idles with no viewer.
 
@@ -47,7 +58,7 @@ python track.py --model runs/train/dut_v3_n960/weights/best.pt --imgsz 960 --hfo
     --base 192.168.1.20 --yaw 92 --pitch 5      # add --src chaser-1 --cam-lat … for a moving camera
 ```
 
-Settings (environment): `VT_BASE` base address (default `127.0.0.1:47010`), `VT_SRC` our camera id in the base's site file (default `post-1`), `VT_CUE_PORT` (default 47011), `VT_LINK=1` turns the link on when the dashboard starts.
+Settings (environment): `VT_BASE` base address (default: the first base that sends us a cue or status, `127.0.0.1:47010` until then), `VT_SRC` our camera id in the base's site file (default `post-1`), `VT_CUE_PORT` (default 47011), `VT_LINK=1` turns the link on when the dashboard starts.
 
 What is sent: VLM-confirmed drones when verification is on, otherwise every box labelled `drone` (the stock COCO model sends nothing), at most 5 messages a second. With nothing in view an empty heartbeat goes out once a second; the base learns our IP from it and sends cues only to trackers it has heard from. Mil-relation range is sent with ±50% uncertainty because it assumes the drone's width. The base starts a new track from a camera only at confidence ≥ 0.6; lower-confidence boxes can only update an existing track.
 
