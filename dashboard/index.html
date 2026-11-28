@@ -107,6 +107,12 @@
       <div class="set"><label>Drone width (m)<input type="number" id="lvSize" step="0.05" value="0.35"></label><label>Camera view (°)<input type="number" id="lvFov" step="1" value="60"></label></div>
     </div>
     <div class="ctl lv-verify-control"><label class="chk"><input type="checkbox" id="lvVerify" aria-describedby="lvVerifyNote"> Verify drones with local VLM</label><span id="lvVerifyNote">Checks new objects or meaningful appearance changes; reuses the result otherwise.</span></div>
+    <div class="ctl lv-standin-control"><label class="chk"><input type="checkbox" id="lvStandin" aria-describedby="lvStandinNote"> Phone stands in for the drone (testing)</label><span id="lvStandinNote">Watches for a cell phone with the stock model and reports it as the drone, labelled “phone stand-in”. Distance assumes a 15 cm phone. VLM check is skipped.</span></div>
+    <div class="ctl lv-link-control"><label class="chk"><input type="checkbox" id="lvLink" aria-describedby="lvLinkNote"> Send to Silent Sentinel base</label><span id="lvLinkNote">Drone tracks go to the base over UDP; the base's cue is drawn on the video.</span></div>
+    <div class="tele" id="lvPose" hidden>
+      <div class="set"><label>Camera faces (° true)<input type="number" id="lvYaw" step="1" value="0"></label><label>Tilt up (°)<input type="number" id="lvPitch" step="1" value="0"></label></div>
+      <div class="set"><label>Camera lat<input type="number" id="lvLat" step="0.00001" value="0"></label><label>lon<input type="number" id="lvLon" step="0.00001" value="0"></label><label>height (m)<input type="number" id="lvAlt" step="0.5" value="0"></label></div>
+    </div>
     <details class="ver"><summary>What do v1, v2, v3 and “+ hold” mean?</summary><div class="verBody"></div></details>
     <div class="keys" id="lvNote"><kbd>Space</kbd> pause · <kbd>[</kbd> <kbd>]</kbd> change video · <kbd>R</kbd> restart. Teal brackets = main target, orange line = its path. Move the cutoff slider and watch boxes appear and drop.</div>
   </div>
@@ -115,6 +121,8 @@
     <div class="tele" style="margin-top:0"><div><span class="k">YOLO confidence</span><span class="v" id="lvC">—</span></div><div><span class="k">Range (mil)</span><span class="v" id="lvR">—</span></div><div><span class="k">Track ID</span><span class="v" id="lvId">—</span></div><div><span class="k">Tracker FPS</span><span class="v" id="lvFps">—</span></div></div>
     <h3>Drone verification</h3>
     <div id="lvVerification" class="lv-verification" role="status" aria-live="polite" aria-atomic="true"><div id="lvVerdict">Verification off</div><div id="lvVerificationNote">Enable verification to check detector candidates.</div><div id="lvObjectLabel" hidden></div></div>
+    <h3>Silent Sentinel base</h3>
+    <div id="lvLinkBox" class="lv-verification" role="status" aria-live="polite" aria-atomic="true"><div id="lvLinkState">Link off</div><div id="lvLinkC2"></div><div id="lvLinkCue">Turn on “Send to Silent Sentinel base” to share tracks.</div></div>
     <h3>YOLO confidence, last 5 s</h3>
     <canvas id="lvSpark" height="64" aria-label="YOLO confidence over the last five seconds" style="width:100%;display:block;border:1px solid var(--line)"></canvas>
     <h3>Target path</h3>

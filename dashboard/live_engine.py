@@ -11,6 +11,7 @@ Standard library only, besides the packages track.py already uses.
 """
 import collections
 import csv
+import os
 import json
 import math
 import random
@@ -27,6 +28,8 @@ from ultralytics import YOLO
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
+from base_link import PHONE_CLASS, BaseLink, phone_range
+import phone_feed
 from drone_verifier import DroneVerifier
 
 HERE = Path(__file__).resolve().parent
@@ -47,6 +50,7 @@ REPORTS = {  # model id -> (Test 1 dir, Test 2 dir, training run)
     "v4": ("runs/false_alarms_v4", "runs/tracking_test_v4", "runs/train/dut_v4_n960"),
 }
 STOCK_DRONE_LIKE = [4, 14, 33]  # COCO airplane, bird, kite
+PHONE_SOURCE = "phone"  # a phone streaming video + GPS + heading over Wi-Fi: it plays the chaser drone (phone_feed.py)
 VIDEO_EXT = {".webm", ".mp4", ".mov", ".mkv", ".avi", ".m4v", ".ogv"}
 DEVICE = "cuda" if torch.cuda.is_available() else ("mps" if torch.backends.mps.is_available() else "cpu")
 TEAL, ORANGE, WHITE = (197, 224, 63), (61, 107, 255), (240, 240, 240)
@@ -76,7 +80,7 @@ def default_model():
 def list_sources():
     vids = [str(p.relative_to(ROOT)) for p in (ROOT / "footage").rglob("*") if p.suffix.lower() in VIDEO_EXT and "web" not in p.relative_to(ROOT).parts]
     vids.sort(key=lambda v: (0 if "/dut/" in v else 2 if "/negatives/" in v else 1, v))
-    return vids + [f"camera:{i}" for i in camera_names()]
+    return vids + [f"camera:{i}" for i in camera_names()] + [PHONE_SOURCE]
 
 
 _cams = {}
@@ -117,6 +121,30 @@ def brackets(img, x1, y1, x2, y2, color, t):
     for (cx, cy, dx, dy) in [(x1, y1, 1, 1), (x2, y1, -1, 1), (x2, y2, -1, -1), (x1, y2, 1, -1)]:
         cv2.line(img, (cx, cy), (cx + dx * L, cy), color, t, cv2.LINE_AA)
         cv2.line(img, (cx, cy), (cx, cy + dy * L), color, t, cv2.LINE_AA)
+
+
+def draw_cue(img, cue, hfov, pitch):
+    """Where the base says to look: a dashed ring if the cue is in view, an edge arrow if not."""
+    h, w = img.shape[:2]
+    col = (0, 200, 255)
+    tag = f"BASE T{cue['track_id']}  {cue['dist_m']:.0f} m  +/-{cue['sigma_m']:.0f} m"
+    f = w / 2 / math.tan(math.radians(hfov) / 2)  # focal length in pixels
+    if cue["in_view"]:
+        x = int(w / 2 + f * math.tan(math.radians(cue["rel_az_deg"])))
+        el = cue["el_deg"] if cue["el_deg"] is not None else pitch
+        y = int(min(max(h / 2 - f * math.tan(math.radians(el - pitch)), 0), h - 1))
+        r = int(min(max(f * math.tan(math.radians(cue["spread_deg"] / 2)), 18), w / 3))
+        for a in range(0, 360, 20):
+            cv2.ellipse(img, (x, y), (r, r), 0, a, a + 10, col, 2, cv2.LINE_AA)
+        cv2.putText(img, tag, (max(4, x - r), max(20, y - r - 10)), cv2.FONT_HERSHEY_SIMPLEX, 0.6, col, 2, cv2.LINE_AA)
+    else:
+        right = cue["rel_az_deg"] > 0
+        x0, x1 = (w - 90, w - 20) if right else (90, 20)
+        cv2.arrowedLine(img, (x0, h // 2), (x1, h // 2), col, 5, cv2.LINE_AA, tipLength=0.5)
+        txt = f"{abs(cue['rel_az_deg']):.0f} deg {'R' if right else 'L'}  " + tag
+        (tw, _), _ = cv2.getTextSize(txt, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
+        tx = w - tw - 20 if right else 20
+        cv2.putText(img, txt, (tx, h // 2 + 36), cv2.FONT_HERSHEY_SIMPLEX, 0.6, col, 2, cv2.LINE_AA)
 
 
 def read_json(rel):
@@ -300,13 +328,21 @@ class Engine(threading.Thread):
         srcs = list_sources()
         default = next((s for s in srcs if s.endswith("dut/video09.mp4")), srcs[0])
         self.settings = {"source": default, "model": default_model(), "conf": 0.35, "imgsz": 960,
-                         "size_m": 0.35, "hfov": 60.0, "paused": False, "tracker": "default", "verify": False}
+                         "size_m": 0.35, "hfov": 60.0, "paused": False, "tracker": "default", "verify": False,
+                         # Silent Sentinel base link (base_link.py); camera pose: yaw = true bearing of the
+                         # image centre, pitch up +, position 0/0 = let the base use its site file.
+                         "link": os.environ.get("VT_LINK") == "1", "yaw": 0.0, "pitch": 0.0,
+                         # Phone stand-in: no drone available, so the stock model's "cell phone" plays the drone.
+                         "standin": os.environ.get("VT_STANDIN") == "1",
+                         "cam_lat": 0.0, "cam_lon": 0.0, "cam_alt": 0.0}
         self.restart = True
         self.models = {}
         self.jpeg = None
         self.stats = {}
         self.viewers = 0
         self.verifier = None
+        self.link = None
+        self.link_src = None  # camera id the link started with (chaser-1 replaces it for the phone)
         self.primary_id = None
         self.reset_counters()
 
@@ -328,9 +364,27 @@ class Engine(threading.Thread):
                     continue
                 if k == "tracker" and v not in ("default", "hold"):
                     continue
-                if k in ("source", "model", "imgsz", "tracker", "verify") and v != cur:
+                if k in ("source", "model", "imgsz", "tracker", "verify", "standin") and v != cur:
                     self.restart = True
                 self.settings[k] = v
+
+    def update_link(self, s, dets, w, h, t):
+        """Send this frame's drone tracks to the Silent Sentinel base; return link status + latest cue."""
+        if not s["link"]:
+            if self.link:
+                self.link.close()
+                self.link = None
+            return {"enabled": False}
+        if self.link is None:
+            self.link = BaseLink()
+        if self.link_src is None:
+            self.link_src = self.link.src
+        phone = s["source"] == PHONE_SOURCE
+        self.link.src = phone_feed.CHASER_SRC if phone else self.link_src
+        self.link.publish(dets, w, h, s, t)  # without a GPS fix the base can't place it, but still hears the heartbeat
+        if phone and not (s.get("cam_lat") or s.get("cam_lon")):
+            return {**self.link.status(s), "note": "Waiting for the phone's GPS fix: the base can't place chaser-1 yet."}
+        return self.link.status(s)
 
     def get_model(self, name):
         if name not in self.models:
@@ -338,6 +392,9 @@ class Engine(threading.Thread):
         return self.models[name]
 
     def open_source(self, src):
+        if src == PHONE_SOURCE:
+            phone_feed.feed().start()
+            return phone_feed.PhoneCapture(phone_feed.feed()), 6.0, True, None
         cap = cv2.VideoCapture(int(src.split(":")[1]) if src.startswith("camera:") else str(ROOT / src))
         fps = cap.get(cv2.CAP_PROP_FPS)
         n = cap.get(cv2.CAP_PROP_FRAME_COUNT)
@@ -357,7 +414,7 @@ class Engine(threading.Thread):
                 'locked_pct': 0.0, 'current_lock_s': 0.0, 'longest_lock_s': 0.0,
                 'reacquisitions': 0, 'targets': [], 'primary': None, 'candidate': None,
                 'verification': {'enabled': self.settings['verify']},
-                'trail': [], 'conf_hist': [], 'frame_size': [0, 0],
+                'trail': [], 'conf_hist': [], 'frame_size': [0, 0], 'link': {'enabled': False},
             }
 
     def run(self):
@@ -385,7 +442,7 @@ class Engine(threading.Thread):
                 if cap:
                     cap.release()
                 cap, fps_in, live, total = self.open_source(s["source"])
-                model = self.get_model(s["model"])
+                model = self.get_model("stock" if s["standin"] else s["model"])
                 model.predictor = None  # fresh tracker
                 self.reset_counters()
             if idle and not restart:  # nobody watching: don't burn the GPU (e.g. while training)
@@ -406,6 +463,14 @@ class Engine(threading.Thread):
             t0 = time.time()
             ok, frame = cap.read()
             if not ok:
+                if live and s["source"] == PHONE_SOURCE:
+                    pf = phone_feed.feed()
+                    with self.lock:
+                        self.stats = {**self.stats, "status": "WAITING_PHONE", "settings": s, "phone": pf.status(),
+                                      "error": (pf.error or f"Waiting for the phone. On it, open {pf.url} in Safari, accept the "
+                                                f"'not private' warning once, and tap Start. Phone and Mac need the same Wi-Fi "
+                                                f"(or put the Mac on the phone's hotspot).")}
+                    continue
                 if live:
                     name = camera_names().get(int(s["source"].split(":")[1]), s["source"])
                     why = ("could not be opened" if not cap.isOpened() else "is connected but sends no picture")
@@ -426,7 +491,15 @@ class Engine(threading.Thread):
                     self.verifier.reset()
                 continue
             pos = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
-            classes = STOCK_DRONE_LIKE if s["model"] == "stock" else None
+            if s["source"] == PHONE_SOURCE:  # the phone moves: its own GPS/heading/tilt are the camera pose
+                pose = phone_feed.feed().live_pose()
+                s = {**s, **pose} if pose else {**s, "cam_lat": 0.0, "cam_lon": 0.0}
+            standin = s["standin"]
+            if standin:  # only phones; the stock COCO model is loaded on restart
+                classes = [i for i, n in model.names.items() if n == PHONE_CLASS]
+            else:
+                classes = STOCK_DRONE_LIKE if s["model"] == "stock" else None
+            verify = s["verify"] and not standin  # the VLM would (rightly) say a phone is not a drone
             hold = s["tracker"] == "hold"  # keep a locked drone through weak detections (see bytetrack_hold.yaml)
             r = model.track(frame, persist=True, conf=min(s["conf"], 0.08) if hold else s["conf"], imgsz=s["imgsz"], classes=classes,
                             device=DEVICE, tracker=str(ROOT / "bytetrack_hold.yaml") if hold else "bytetrack.yaml", verbose=False)[0]
@@ -434,12 +507,12 @@ class Engine(threading.Thread):
             dets = []
             for b in r.boxes:
                 x1, y1, x2, y2 = [int(v) for v in b.xyxy[0].tolist()]
-                rng = mil_range(x2 - x1, w, s["size_m"], s["hfov"])
+                rng = phone_range((x1, y1, x2, y2), w, s["hfov"]) if standin else mil_range(x2 - x1, w, s["size_m"], s["hfov"])
                 dets.append({"id": int(b.id) if b.id is not None else None, "conf": float(b.conf),
                              "label": r.names[int(b.cls)], "box": [x1, y1, x2, y2],
                              "range_m": round(rng, 1) if rng else None})
             dets.sort(key=lambda d: -d["conf"])
-            if s['verify']:
+            if verify:
                 if self.verifier is None:
                     self.verifier = DroneVerifier()
                 self.verifier.update(frame, dets)
@@ -447,12 +520,12 @@ class Engine(threading.Thread):
             else:
                 primary = dets[0] if dets else None
             candidate = primary or (dets[0] if dets else None)
-            verification = {'enabled': s['verify'], **(candidate.get('verification', {}) if candidate else {})}
+            verification = {'enabled': verify, **(candidate.get('verification', {}) if candidate else {})}
 
             self.frames += 1
             now = time.time()
             if primary:
-                if s['verify'] and primary['id'] != self.primary_id:
+                if verify and primary['id'] != self.primary_id:
                     self.trail.clear()
                 self.primary_id = primary['id']
                 if self.ever_locked and self.streak == 0:
@@ -469,9 +542,12 @@ class Engine(threading.Thread):
             self.conf_hist.append(round(primary["conf"], 3) if primary else 0)
             lost_for = (now - self.last_seen) if self.last_seen else None
             status = "LOCKED" if primary else ("COASTING" if lost_for is not None and lost_for < 1.0 else "SEARCHING")
-            if s['verify'] and candidate and not primary:
+            if verify and candidate and not primary:
                 status = {'rejected': 'FALSE_REVIEW', 'pending': 'REVIEWING',
                           'error': 'VERIFY_ERROR'}.get(verification.get('status'), 'UNVERIFIED')
+
+            link = self.update_link(s, dets, w, h, t0)
+            cue = link.get("cue")
 
             out = frame.copy()
             pts = [(int(px * w), int(py * h)) for px, py in self.trail]
@@ -483,14 +559,16 @@ class Engine(threading.Thread):
                 col = TEAL if main else WHITE
                 verdict = d.get('verification', {})
                 rejected = verdict.get('status') == 'rejected'
-                if s['verify']:
+                if verify:
                     col = TEAL if verdict.get('status') == 'confirmed' else (70, 90, 235) if rejected else (70, 190, 235)
                 if not rejected:
                     brackets(out, x1, y1, x2, y2, col, 4 if main else 2)
-                if s['verify']:
+                if verify:
                     tag = 'DRONE NOT DETECTED' if rejected else 'DRONE DETECTED' if verdict.get('status') == 'confirmed' else verdict.get('status', 'unverified').upper()
                     if 'label' in verdict:
                         tag += f" ({verdict['label']})"
+                elif standin:
+                    tag = f"PHONE = DRONE STAND-IN {d['conf']*100:.0f}%"
                 else:
                     tag = f"{d['label'].upper()} {d['conf']*100:.0f}%"
                 if d["id"] is not None:
@@ -501,6 +579,8 @@ class Engine(threading.Thread):
                 ty = max(th + 10, y1 - 10)
                 cv2.rectangle(out, (x1, ty - th - 8), (x1 + tw + 12, ty + 6), (20, 14, 8), -1)
                 cv2.putText(out, tag, (x1 + 6, ty), cv2.FONT_HERSHEY_SIMPLEX, 0.7, col, 2, cv2.LINE_AA)
+            if cue and "rel_az_deg" in cue:
+                draw_cue(out, cue, s["hfov"], s["pitch"])
             if w > 1280:
                 out = cv2.resize(out, (1280, int(h * 1280 / w)))
             ok, buf = cv2.imencode(".jpg", out, [cv2.IMWRITE_JPEG_QUALITY, 80])
@@ -514,6 +594,7 @@ class Engine(threading.Thread):
                 self.stats = {
                     "error": None,
                     "status": status, "device": DEVICE, "settings": s, "fps": round(self.fps, 1),
+                    "phone": phone_feed.feed().status() if s["source"] == PHONE_SOURCE else None,
                     "source_fps": round(fps_in, 1), "frames": self.frames, "pos": pos, "total": total,
                     "locked_pct": round(100 * self.locked / self.frames, 1),
                     "current_lock_s": round(self.streak / fps_in, 1),
@@ -521,7 +602,7 @@ class Engine(threading.Thread):
                     "reacquisitions": self.reacq, "targets": dets[:5], "primary": primary,
                     "candidate": candidate, "verification": verification,
                     "trail": [[round(x, 4), round(y, 4)] for x, y in self.trail],
-                    "conf_hist": list(self.conf_hist), "frame_size": [w, h],
+                    "conf_hist": list(self.conf_hist), "frame_size": [w, h], "link": link,
                 }
             if not live:  # play files at real speed
                 wait = 1 / fps_in - (time.time() - t0)
